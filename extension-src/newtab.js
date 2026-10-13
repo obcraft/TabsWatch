@@ -552,10 +552,35 @@ function confirmBox(title, text, ok = "Delete") {
   });
 }
 
+/* Errors: storage and IndexedDB failures are shown to the reader instead of failing silently */
+
+let toastTimer;
+function report(what, err) {
+  console.error(`Tabs Watch: couldn't ${what}`, err);
+  const t = $("toast");
+  t.textContent = `Couldn't ${what}. ${err?.message || err || ""}`.trim();
+  if (t.matches(":popover-open")) t.hidePopover();
+  t.showPopover(); // popover = top layer, so it also shows above an open sheet
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.hidePopover(), 6000);
+}
+
+const guard =
+  (what, fn) =>
+  async (...args) => {
+    try {
+      return await fn(...args);
+    } catch (err) {
+      report(what, err);
+    }
+  };
+
 /* Settings */
 
 const themeSeg = (v = document.documentElement.dataset.theme) =>
-  seg($("prefTheme"), normalizeTheme(v), (t) => chrome.storage.local.set({ newTabTheme: t }));
+  seg($("prefTheme"), normalizeTheme(v), (t) =>
+    chrome.storage.local.set({ newTabTheme: t }).catch((err) => report("change the theme", err)),
+  );
 
 async function showSettings() {
   const { settings = { enabled: true, intervalMin: 1, captureText: true } } =
@@ -583,17 +608,25 @@ async function saveSettings() {
       intervalMin,
     },
   });
-  chrome.runtime.sendMessage({ type: "settingsChanged" });
+  await chrome.runtime.sendMessage({ type: "settingsChanged" });
 }
 
 function savePrefs(patch) {
   prefs = { ...prefs, ...patch };
-  chrome.storage.local.set({ newTabPrefs: prefs });
+  chrome.storage.local
+    .set({ newTabPrefs: prefs })
+    .catch((err) => report("save your homepage settings", err));
   render();
 }
 
 async function renderModel() {
-  const { model: m = {}, settings = {} } = await chrome.storage.local.get(["model", "settings"]);
+  let m, settings;
+  try {
+    ({ model: m = {}, settings = {} } = await chrome.storage.local.get(["model", "settings"]));
+  } catch (err) {
+    console.error("Tabs Watch: couldn't read the model status", err); // status line only; retried every 4 s
+    return;
+  }
   const changed = m.installed !== model.installed;
   model = m;
   const on = settings.enabled !== false && settings.knowledge !== false;
@@ -634,8 +667,16 @@ async function renderModel() {
   if (changed) render();
 }
 
+let loadFailed = false;
 async function load(force = false) {
-  items = await db.all();
+  try {
+    items = await db.all();
+    loadFailed = false;
+  } catch (err) {
+    if (!loadFailed) report("read your saved articles", err); // once, not every 4 s
+    loadFailed = true;
+    if (!force) return; // keep what is on screen; a forced load still renders the rest of the page
+  }
   const sig = items.map((a) => `${a.id}:${a.status}`).join("|");
   if (force || sig !== lastSig) {
     lastSig = sig;
@@ -666,16 +707,20 @@ $("pageDlg").addEventListener("close", () => {
   $("pBody").replaceChildren();
 });
 
-$("aOpen").onclick = () => openArticle && chrome.tabs.create({ url: openArticle.url });
-$("aRetry").onclick = async () => {
+$("aOpen").onclick = guard(
+  "open the original",
+  () => openArticle && chrome.tabs.create({ url: openArticle.url }),
+);
+$("aRetry").onclick = guard("queue the article again", async () => {
   if (!openArticle) return;
-  openArticle = { ...openArticle, status: "pending", analysis: null, error: null };
-  await db.put(openArticle);
-  chrome.runtime.sendMessage({ type: "processQueue" });
+  const next = { ...openArticle, status: "pending", analysis: null, error: null };
+  await db.put(next);
+  openArticle = next;
   drawArticle();
+  await chrome.runtime.sendMessage({ type: "processQueue" });
   load(true);
-};
-$("aDelete").onclick = async () => {
+});
+$("aDelete").onclick = guard("delete the article", async () => {
   const a = openArticle;
   if (
     !a ||
@@ -688,9 +733,12 @@ $("aDelete").onclick = async () => {
   await db.del(a.id);
   $("articleDlg").close();
   load(true);
-};
-$("pOpen").onclick = () => openPage && chrome.tabs.create({ url: openPage.url });
-$("pDelete").onclick = async () => {
+});
+$("pOpen").onclick = guard(
+  "open the original",
+  () => openPage && chrome.tabs.create({ url: openPage.url }),
+);
+$("pDelete").onclick = guard("delete the saved page", async () => {
   const c = openPage;
   if (
     !c ||
@@ -703,11 +751,11 @@ $("pDelete").onclick = async () => {
   const { captures: all = [] } = await chrome.storage.local.get("captures");
   await chrome.storage.local.set({ captures: all.filter((x) => x.id !== c.id) });
   $("pageDlg").close();
-};
+});
 
-$("openSettings").onclick = showSettings;
+$("openSettings").onclick = guard("open settings", showSettings);
 for (const id of ["setEnabled", "setText", "setInterval"])
-  $(id).addEventListener("change", saveSettings);
+  $(id).addEventListener("change", guard("save your settings", saveSettings));
 $("prefName").addEventListener("input", () =>
   savePrefs({ name: $("prefName").value.slice(0, 40) }),
 );
@@ -715,9 +763,12 @@ $("prefRecap").addEventListener("change", () => savePrefs({ showRecap: $("prefRe
 for (const id of ["install", "mInstall"])
   $(id).onclick = () => {
     $(id).hidden = true;
-    chrome.runtime.sendMessage({ type: "installModel" });
+    chrome.runtime.sendMessage({ type: "installModel" }).catch((err) => {
+      $(id).hidden = false;
+      report("start the model download", err);
+    });
   };
-$("exportData").onclick = async () => {
+$("exportData").onclick = guard("export your data", async () => {
   const data = {
     articles: await db.all(),
     ...(await chrome.storage.local.get(["log", "captures", "settings"])),
@@ -730,8 +781,8 @@ $("exportData").onclick = async () => {
   });
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1e4);
-};
-$("wipeData").onclick = async () => {
+});
+$("wipeData").onclick = guard("delete everything", async () => {
   if (
     !(await confirmBox(
       "Delete everything?",
@@ -743,7 +794,7 @@ $("wipeData").onclick = async () => {
   await db.clearAll();
   await chrome.runtime.sendMessage({ type: "clear" });
   load(true);
-};
+});
 
 $("q").oninput = render;
 $("q").onkeydown = (e) => {
@@ -787,10 +838,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.model || changes.settings) renderModel();
 });
 
-initTheme(chrome.storage, document.documentElement, $("themeToggle"));
-const stored = await chrome.storage.local.get(["captures", "newTabPrefs"]);
-captures = stored.captures || [];
-prefs = { ...prefs, ...stored.newTabPrefs };
+initTheme(chrome.storage, document.documentElement, $("themeToggle")).catch((err) =>
+  report("load your theme", err),
+);
+try {
+  const stored = await chrome.storage.local.get(["captures", "newTabPrefs"]);
+  captures = stored.captures || [];
+  prefs = { ...prefs, ...stored.newTabPrefs };
+} catch (err) {
+  report("load saved pages and homepage settings", err); // keep going with defaults
+}
 await load(true);
 if (lib === "saved") $("library").scrollIntoView();
 setInterval(load, 4000); // pick up new captures/summaries (no AI runs on opening a tab)

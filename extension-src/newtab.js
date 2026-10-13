@@ -124,7 +124,7 @@ async function renderModel() {
   const on = settings.enabled !== false && settings.knowledge !== false;
   $("dot").classList.toggle("on", on);
   const pending = items.filter((a) => a.status === "pending" || a.status === "processing").length;
-  $("stat").textContent = (on ? "Saving articles" : "Paused") + (pending && model.installed ? ` · ${pending} to summarise` : "");
+  $("stat").textContent = (on ? "Saving articles" : "Paused") + (model.working ? ` · Summarising “${model.working.slice(0, 40)}” · ${model.waiting} waiting` : pending && model.installed ? ` · ${pending} in queue` : "");
   const show = !model.installed || model.state === "downloading" || model.state === "error";
   $("setup").hidden = !show;
   if (model.state === "downloading") {

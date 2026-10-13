@@ -34,9 +34,20 @@ async function saveSettings() {
 ["enabled", "screenshots", "captureText", "intervalMin"].forEach((id) => $(id).addEventListener("change", saveSettings));
 
 $("snap").onclick = async () => { await chrome.runtime.sendMessage({ type: "snapshotNow" }); render(); };
+$("dash").onclick = () => chrome.runtime.sendMessage({ type: "openDashboard" });
+$("full").onclick = async () => {
+  const b = $("full");
+  b.disabled = true;
+  b.textContent = "Capturing…";
+  const r = await chrome.runtime.sendMessage({ type: "fullCapture" });
+  b.disabled = false;
+  b.textContent = "Full-page capture";
+  if (!r?.ok) alert(r?.error || "Capture failed.");
+  render();
+};
 $("clear").onclick = async () => { if (confirm("Delete all saved data?")) { await chrome.runtime.sendMessage({ type: "clear" }); render(); } };
 $("export").onclick = async () => {
-  const data = await chrome.storage.local.get(["log", "shots", "current"]);
+  const data = await chrome.storage.local.get(["log", "shots", "captures", "current"]);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
   a.download = `tab-watcher-${Date.now()}.json`;

@@ -40,8 +40,8 @@ function Index() {
     <main className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="flex items-center justify-between px-8 py-3">
-          <span className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
-            <img src={logo} width={32} height={32} alt="" className="h-8 w-8 object-contain" /> Tabs Watch
+          <span className="flex items-center gap-2 text-[15px] font-semibold tracking-tight" aria-label="Tabs Watch">
+            <img src={logo} width={32} height={32} alt="" className="h-8 w-8 object-contain" />
           </span>
           <Button onClick={download} className="rounded-full px-4 shadow-none">
             Download

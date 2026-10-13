@@ -3,9 +3,9 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Tab Watcher — Chrome extension" },
+      { title: "Tabs Watch — Chrome extension" },
       { name: "description", content: "Track, save and monitor what your active Chrome tab is showing, including full-page captures." },
-      { property: "og:title", content: "Tab Watcher — Chrome extension" },
+      { property: "og:title", content: "Tabs Watch — Chrome extension" },
       { property: "og:description", content: "Track, save and monitor what your active Chrome tab is showing, including full-page captures." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -41,7 +41,7 @@ function Index() {
       <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
         <div className="flex items-center justify-between px-8 py-4">
           <span className="flex items-center gap-2 font-semibold text-foreground">
-            <span className="h-2 w-2 rounded-full bg-brand" /> Tab Watcher
+            <span className="h-2 w-2 rounded-full bg-brand" /> Tabs Watch
           </span>
           <button onClick={download} className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/85">
             Download extension
@@ -53,7 +53,7 @@ function Index() {
         <p className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-brand">
           <span className="h-1.5 w-1.5 rounded-full bg-brand" /> Chrome extension
         </p>
-        <h1 className="mt-4 text-6xl font-bold tracking-tight text-foreground">Tab Watcher</h1>
+        <h1 className="mt-4 text-6xl font-bold tracking-tight text-foreground">Tabs Watch</h1>
         <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
           Tracks, saves and monitors what your active tab is rendering — including a full-page capture,
           one screen at a time. All data stays on your device.
@@ -84,7 +84,7 @@ function Index() {
           <h2 className="text-2xl font-bold text-foreground">Full-page capture</h2>
           <p className="mt-4 text-muted-foreground">
             Open any web page, then click <b className="text-foreground">Full-page capture</b> in the popup.
-            Tab Watcher scrolls the page one screen height at a time, photographing each 100vh section on
+            Tabs Watch scrolls the page one screen height at a time, photographing each 100vh section on
             the way down, then returns you to where you were.
           </p>
           <p className="mt-3 text-muted-foreground">

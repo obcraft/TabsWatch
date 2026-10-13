@@ -46,7 +46,7 @@ async function render() {
   close();
 
   if (!captures.length) {
-    wrap.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>No full-page captures yet</b>Open a page, then click <b>Full-page capture</b> in the Tab Watcher popup.</div>`;
+    wrap.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>No full-page captures yet</b>Open a page, then click <b>Full-page capture</b> in the Tabs Watch popup.</div>`;
     return;
   }
 

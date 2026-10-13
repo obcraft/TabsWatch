@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import logo from "@/assets/tabs-watch-logo-window.png";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -39,11 +41,11 @@ function Index() {
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="flex items-center justify-between px-8 py-3">
           <span className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
-            <span className="h-2 w-2 rounded-full bg-brand" /> Tabs Watch
+            <img src={logo} width={32} height={32} alt="" className="h-8 w-8 object-contain" /> Tabs Watch
           </span>
-          <button onClick={download} className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85">
+          <Button onClick={download} className="rounded-full px-4 shadow-none">
             Download
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -55,9 +57,9 @@ function Index() {
           Automatic, without repetition, and fully on your own computer. No account, no cloud.
         </p>
         <div className="mt-10 flex justify-center gap-3">
-          <button onClick={download} className="rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85">
+          <Button onClick={download} className="h-auto rounded-full px-6 py-3 shadow-none">
             Download for Chrome
-          </button>
+          </Button>
           <a href="#install" className="rounded-full border border-border px-6 py-3 text-sm font-medium transition-colors hover:bg-muted">
             How to install
           </a>

@@ -1,17 +1,17 @@
 /* Shared Tabs Watch look: white, calm, Apple/Google-like. Loaded after each page's own styles. */
-:root{--fg:#1d1d1f;--mute:#6e6e73;--line:#e8e8ed;--soft:#f5f5f7;--accent:#1a8f52}
-body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Google Sans Text","Segoe UI",Roboto,sans-serif;color:var(--fg);background:#fff;letter-spacing:-.005em}
+:root{--bg:#fff;--fg:#1d1d1f;--mute:#6e6e73;--line:#e8e8ed;--soft:#f5f5f7;--accent:#1a8f52;--inverse:#fff}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Google Sans Text","Segoe UI",Roboto,sans-serif;color:var(--fg);background:var(--bg);letter-spacing:0}
 header{border-bottom:1px solid var(--line)!important;background:rgba(255,255,255,.86)!important;backdrop-filter:saturate(180%) blur(16px)}
 h1{font-weight:600!important;font-size:15px!important;letter-spacing:-.01em}
 h1 span{color:inherit!important}
 h1::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:8px;vertical-align:1px}
 .muted,.m,.meta{color:var(--mute)!important}
-button,a.dl{border:1px solid var(--line)!important;border-radius:980px!important;padding:6px 14px!important;font-weight:450!important;background:#fff;color:var(--fg);transition:background .15s}
+button,a.dl{border:1px solid var(--line)!important;border-radius:980px!important;padding:6px 14px!important;font-weight:450!important;background:var(--bg);color:var(--fg);transition:background .15s}
 button:hover,a.dl:hover{background:var(--soft)!important}
-button.primary,button.p{background:var(--fg)!important;color:#fff!important;border-color:var(--fg)!important}
+button.primary,button.p{background:var(--fg)!important;color:var(--inverse)!important;border-color:var(--fg)!important}
 button.primary:hover,button.p:hover{background:#3a3a3c!important}
 button.on,.tabs button.on{background:var(--soft)!important;border-color:var(--line)!important;color:var(--fg)!important;font-weight:550!important}
-input,select{border:1px solid var(--line)!important;border-radius:10px!important;background:#fff}
+input,select{border:1px solid var(--line)!important;border-radius:10px!important;background:var(--bg)}
 #q{background:var(--soft)!important;border-color:transparent!important;border-radius:12px!important;padding:9px 14px!important}
 #q:focus{background:#fff!important;border-color:var(--line)!important;box-shadow:0 0 0 4px rgba(26,143,82,.10)}
 .card,.cap,.rc,.setup{border:1px solid var(--line)!important;border-radius:14px!important;transition:box-shadow .2s,border-color .2s}

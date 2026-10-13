@@ -1,5 +1,6 @@
 import * as db from "./db.js";
 import { buildRecaps } from "./recap.js";
+import { initTheme } from "./theme.js";
 
 const $ = (id) => document.getElementById(id);
 const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
@@ -65,6 +66,10 @@ function renderRecaps() {
 }
 
 function render() {
+  $("welcome").hidden = items.length > 0;
+  $("archive").hidden = items.length === 0;
+  $("pageTitle").textContent = items.length ? "Your reading, brought together." : "The core of what you read.";
+  $("pageSubtitle").textContent = items.length ? `${items.length} saved articles · on this computer` : "On your new tab. On your own computer.";
   const sites = [...new Set(items.map((a) => host(a.url)))].sort();
   const cur = $("site").value;
   $("site").replaceChildren(el("option", { value: "", textContent: "All sites" }), ...sites.map((s) => el("option", { value: s, textContent: s })));
@@ -76,13 +81,7 @@ function render() {
   if (!list.length) {
     $("grid").replaceChildren(items.length
       ? el("div", { className: "empty", style: "grid-column:1/-1" }, el("b", { textContent: "Nothing matches" }), "Try another search.")
-      : el("div", { className: "hero", style: "grid-column:1/-1" },
-          el("h3", { textContent: "Your reading, in one calm place." }),
-          el("p", { textContent: "Just browse. Articles you read for a few seconds appear here, summarised on this computer. Nothing leaves your device." }),
-          el("div", { className: "steps" },
-            el("div", {}, el("b", { textContent: "1 · Read" }), el("span", { textContent: "Open articles as you normally would." })),
-            el("div", {}, el("b", { textContent: "2 · Summarised offline" }), el("span", { textContent: "The local model works through them one by one." })),
-            el("div", {}, el("b", { textContent: "3 · Recap" }), el("span", { textContent: "The core per topic shows up on every new tab." })))));
+      : el("div"));
     return;
   }
   $("grid").replaceChildren(...list.map((a) => {
@@ -144,6 +143,11 @@ async function renderModel() {
     $("setupText").textContent = `The model couldn't start: ${model.error}`;
     $("install").hidden = false;
     $("install").textContent = "Try again";
+  } else {
+    $("bar").hidden = true;
+    $("install").hidden = false;
+    $("install").textContent = "Download model";
+    $("setupText").textContent = "One-time download · about 2.2 GB. Summaries stay on this computer.";
   }
 }
 
@@ -156,6 +160,8 @@ async function load() {
 }
 
 $("install").onclick = () => { $("install").hidden = true; chrome.runtime.sendMessage({ type: "installModel" }); };
+$("results").onclick = () => chrome.runtime.sendMessage({ type: "openDashboard" });
+initTheme(chrome.storage, document.documentElement, $("themeToggle"));
 $("q").oninput = render;
 $("period").onchange = render;
 $("site").onchange = render;

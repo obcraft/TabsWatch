@@ -9,6 +9,9 @@
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
 
+- Avoid rewriting pushed git history — no force push, and no rebasing, amending or squashing commits that are already pushed — it desyncs the connected Git integration and can lose project history.
+
+
 - The Chrome extension is the product. Bundled code lives in `extension-src/` and static pages in `extension/`; run `bun scripts/build-extension.ts` after every change — it bundles into `extension/`, adds the ONNX wasm runtime, and repacks `public/tab-watcher.zip`, because the portal serves that archive and a stale one ships old code.
 - The ONNX wasm runtime is copied in only at build time and never committed (`extension/ort/` is git-ignored), because it exceeds the repo's 10 MB file limit.
 - Article knowledge lives in IndexedDB under the extension origin and the local model runs in the offscreen document; never call a cloud model as fallback, because the product promise is local-only analysis.

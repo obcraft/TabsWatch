@@ -1,4 +1,5 @@
 import * as db from "./db.js";
+import { buildRecaps } from "./recap.js";
 
 const $ = (id) => document.getElementById(id);
 const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
@@ -44,11 +45,31 @@ function renderTopics() {
   }) : [el("span", { className: "muted", textContent: "Topics appear once articles are summarised." })]));
 }
 
+function renderRecaps() {
+  const recaps = buildRecaps(items);
+  $("recapWrap").hidden = !recaps.length;
+  const src = (p) => {
+    const a = el("a", { textContent: `${p.article.title} · ${host(p.article.url)}${p.quote ? ` — “${p.quote}”` : ""}` });
+    a.onclick = () => show(p.article);
+    return a;
+  };
+  $("recaps").replaceChildren(...recaps.map((r) => el("div", { className: "rc" },
+    el("h3", { textContent: r.topic }),
+    el("div", { className: "m", textContent: `${r.articles.length} articles opened · last ${day(r.latest)}` }),
+    el("h5", { textContent: "This is the core" }),
+    ...r.core.map((p) => el("div", { className: "rp" }, p.point + (p.sources > 1 ? ` (in ${p.sources} sources)` : ""), src(p))),
+    r.adds.length ? el("h5", { textContent: "This adds something" }) : null,
+    ...r.adds.map((p) => el("div", { className: "rp alt" }, p.point, src(p))),
+    r.earlier ? el("h5", { textContent: "Connects to earlier" }) : null,
+    r.earlier ? el("div", { className: "rp alt" }, `You read about ${r.topic} before, on ${day(r.earlier.time)}.`, src({ article: r.earlier })) : null)));
+}
+
 function render() {
   const sites = [...new Set(items.map((a) => host(a.url)))].sort();
   const cur = $("site").value;
   $("site").replaceChildren(el("option", { value: "", textContent: "All sites" }), ...sites.map((s) => el("option", { value: s, textContent: s })));
   $("site").value = sites.includes(cur) ? cur : "";
+  renderRecaps();
   renderTopics();
   const list = filtered();
   $("listTitle").textContent = topic ? `Related articles · ${topic}` : $("q").value ? `Results (${list.length})` : "Recently viewed";

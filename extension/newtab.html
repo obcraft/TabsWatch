@@ -48,6 +48,14 @@ h2{font-size:12px;font-weight:500;color:#6b7280;margin:18px 28px 0;text-transfor
 .src p.hl{background:#eef8f2}
 .src p b{color:#9aa0a6;font-weight:400;font-size:11px;margin-right:6px}
 @media(max-width:900px){.db{grid-template-columns:1fr}}
+.recaps{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;padding:12px 28px 4px}
+.rc{border:1px solid #eceef0;border-radius:10px;padding:16px;min-width:0}
+.rc h3{margin:0;font-size:15px;font-weight:500}
+.rc h5{margin:12px 0 4px;font-size:11px;font-weight:500;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}
+.rp{margin:0 0 6px;padding-left:10px;border-left:2px solid #1a8f52;font-size:12px;color:#3b3f45}
+.rp.alt{border-left-color:#e0e3e6}
+.rp a{display:block;color:#6b7280;font-size:11px;cursor:pointer;text-decoration:none}
+.rp a:hover{color:#1a8f52}
 </style></head><body>
 <header>
   <h1>Tabs <span>Watch</span></h1>
@@ -64,6 +72,7 @@ h2{font-size:12px;font-weight:500;color:#6b7280;margin:18px 28px 0;text-transfor
   </div>
   <button class="primary" id="install">Install model</button>
 </div>
+<div id="recapWrap"><h2>Your recap · last 14 days</h2><div class="recaps" id="recaps"></div></div>
 <h2>Topics</h2>
 <div class="topics" id="topics"></div>
 <h2 id="listTitle">Recently viewed</h2>

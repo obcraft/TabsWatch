@@ -150,6 +150,8 @@ async function fullCapture(tab) {
     const m = await pageMetrics(tab.id);
     if (!m) break;
     last = m;
+    // Skip a final shot that only repeats most of the screen already taken.
+    if (frames.length && m.top - frames[frames.length - 1].y < m.vh * 0.2) break;
     try {
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 62 });
       frames.push({ y: m.top, dataUrl });

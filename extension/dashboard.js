@@ -27,21 +27,6 @@ async function stitch(cap) {
   return c.toDataURL("image/jpeg", 0.72);
 }
 
-function head(cap) {
-  const el = document.createElement("div");
-  el.className = "cap-head";
-  el.innerHTML = `
-    <div>
-      <h2>${esc(cap.title)}</h2>
-      <div class="meta">${esc(host(cap.url))} · ${new Date(cap.time).toLocaleString()} · <b>${cap.frames.length} screen${cap.frames.length > 1 ? "s" : ""}</b> · page ${Math.round(cap.pageHeight)}px tall</div>
-    </div>
-    <div class="acts">
-      <button data-mode="stitched" class="on">Stitched</button>
-      <button data-mode="frames">Screens</button>
-    </div>`;
-  return el;
-}
-
 async function render() {
   const { captures = [] } = await chrome.storage.local.get("captures");
   const wrap = document.getElementById("wrap");
@@ -56,15 +41,29 @@ async function render() {
   for (const cap of captures) {
     const card = document.createElement("section");
     card.className = "cap";
-    const h = head(cap);
+
+    const h = document.createElement("div");
+    h.className = "cap-head";
+    h.innerHTML = `
+      <div>
+        <h2>${esc(cap.title)}</h2>
+        <div class="meta">${esc(host(cap.url))} · ${new Date(cap.time).toLocaleString()} · <b>${cap.frames.length} screen${cap.frames.length > 1 ? "s" : ""}</b> · page ${Math.round(cap.pageHeight)}px tall</div>
+      </div>
+      <div class="acts">
+        <a class="dl" hidden download>Download full page</a>
+        <button data-mode="stitched" class="on">Stitched</button>
+        <button data-mode="frames">Screens</button>
+      </div>`;
     card.appendChild(h);
+
     const body = document.createElement("div");
     body.className = "stage";
-    body.innerHTML = `<div style="color:#6b7280">Stitching ${cap.frames.length} screens…</div>`;
+    body.innerHTML = `<div class="hint">Stitching ${cap.frames.length} screens…</div>`;
     card.appendChild(body);
     wrap.appendChild(card);
 
-    let mode = "stitched";
+    const dl = h.querySelector(".dl");
+    const mode = { v: "stitched" };
     const stitched = await stitch(cap);
 
     const drawFrames = () => {
@@ -75,31 +74,19 @@ async function render() {
     };
 
     const drawStitched = () => {
+      if (!stitched) return drawFrames();
       body.className = "stage";
-      if (stitched) {
-        body.innerHTML = `<img src="${stitched}" alt="Full page">`;
-        const a = document.createElement("a");
-        a.className = "dl";
-        a.download = `tab-watcher-${host(cap.url)}.jpg`;
-        a.href = stitched;
-        a.textContent = "Download full page";
-        a.style.marginTop = "12px";
-        a.style.display = "inline-block";
-        body.appendChild(a);
-      } else {
-        body.innerHTML = `<div style="color:#6b7280">This page is too tall to stitch into one image — showing individual screens.</div>`;
-        drawFrames();
-        mode = "frames";
-        h.querySelector('[data-mode="stitched"]').classList.remove("on");
-        h.querySelector('[data-mode="frames"]').classList.add("on");
-      }
+      body.innerHTML = `<div class="hint">Full page · ${cap.frames.length} screens · scroll to read</div><img src="${stitched}" alt="Full page of ${esc(cap.url)}">`;
+      dl.href = stitched;
+      dl.download = `tab-watcher-${host(cap.url)}.jpg`;
+      dl.hidden = false;
     };
 
     h.querySelectorAll("button").forEach((b) => {
       b.onclick = () => {
-        mode = b.dataset.mode;
+        mode.v = b.dataset.mode;
         h.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-        mode === "frames" ? drawFrames() : drawStitched();
+        mode.v === "frames" ? drawFrames() : drawStitched();
       };
     });
 

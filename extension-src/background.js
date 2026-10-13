@@ -1,3 +1,4 @@
+import * as db from "./db.js";
 // Tabs Watch background worker
 const MAX_ENTRIES = 500;
 const MAX_SHOTS = 50;
@@ -184,8 +185,69 @@ async function fullCapture(tab) {
   return { ok: true, frames: frames.length };
 }
 
+// ---- Knowledge capture: main article only, after 5s visible ----
+const DWELL_MS = 5000;
+const BLOCKED = /(^|\.)(mail\.|outlook\.|bank|paypal\.|accounts?\.)|login|signin|sign-in|checkout|account|wp-admin/i;
+const pendingTimers = new Map();
+
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument?.()) return;
+  try {
+    await chrome.offscreen.createDocument({ url: "offscreen.html", reasons: ["WORKERS"], justification: "Run the local AI model" });
+  } catch {}
+}
+async function kick(type = "process") {
+  await ensureOffscreen();
+  try { await chrome.runtime.sendMessage({ target: "offscreen", type }); } catch {}
+}
+
+function scheduleArticle(tab) {
+  if (!tab?.id || tab.incognito || !/^https?:/i.test(tab.url || "")) return;
+  clearTimeout(pendingTimers.get(tab.id));
+  const url = tab.url;
+  pendingTimers.set(tab.id, setTimeout(() => captureArticle(tab.id, url), DWELL_MS));
+}
+
+async function captureArticle(tabId, url) {
+  const s = await settings();
+  if (!s.enabled || s.knowledge === false) return;
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const act = await activeTab();
+  if (!tab || !act || act.id !== tabId || tab.url !== url || tab.incognito) return; // navigated away
+  const u = new URL(url);
+  if (BLOCKED.test(u.hostname + u.pathname)) return;
+  const paused = (await get("pausedSites", [])).includes(u.hostname);
+  if (paused) return;
+  let r;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => window.__tabsWatchExtract?.() });
+  } catch { return; }
+  const a = r?.result;
+  if (!a?.ok) return;
+  if ((await chrome.tabs.get(tabId).catch(() => null))?.url !== url) return;
+  const clean = u.origin + u.pathname;
+  const hash = await db.sha256(a.text);
+  const versions = await db.byUrl(clean);
+  if (versions.some((v) => v.hash === hash)) return; // unchanged article: no new copy
+  await db.put({
+    id: `${Date.now()}-${hash.slice(0, 8)}`,
+    url: clean, title: a.title, site: a.site, byline: a.byline, published: a.published, lang: a.lang,
+    time: Date.now(), blocks: a.blocks, text: a.text, hash, version: versions.length + 1,
+    source: "dom", status: "pending",
+  });
+  const { model = {} } = await chrome.storage.local.get("model");
+  if (model.installed) kick();
+}
+
+chrome.tabs.onUpdated.addListener((id, info, tab) => { if (info.status === "complete" && tab.active) scheduleArticle(tab); });
+chrome.tabs.onActivated.addListener(async () => scheduleArticle(await activeTab()));
+
 chrome.runtime.onMessage.addListener((msg, _s, reply) => {
+  if (msg?.target === "offscreen") return false;
   (async () => {
+    if (msg.type === "installModel") await kick("install");
+    if (msg.type === "processQueue") await kick();
     if (msg.type === "snapshotNow") { const t = await activeTab(); if (t) { await track(t); await snapshot(t); } }
     if (msg.type === "fullCapture") { const t = await activeTab(); reply(await fullCapture(t)); return; }
     if (msg.type === "openDashboard") { await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") }); }

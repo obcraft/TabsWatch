@@ -1,5 +1,9 @@
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const host = (u) => { try { return new URL(u).hostname; } catch { return u; } };
+const when = (t) => {
+  const d = new Date(t);
+  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+};
 
 function loadImg(src) {
   return new Promise((res, rej) => {
@@ -27,72 +31,99 @@ async function stitch(cap) {
   return c.toDataURL("image/jpeg", 0.72);
 }
 
+const wrap = document.getElementById("wrap");
+const detail = document.getElementById("detail");
+const dbody = document.getElementById("dbody");
+const ddl = document.getElementById("ddl");
+let mode = "stitched";
+let cur = null;
+let token = 0;
+
 async function render() {
   const { captures = [] } = await chrome.storage.local.get("captures");
-  const wrap = document.getElementById("wrap");
   document.getElementById("count").textContent = captures.length ? `${captures.length} capture${captures.length > 1 ? "s" : ""}` : "";
   wrap.innerHTML = "";
+  close();
 
   if (!captures.length) {
-    wrap.innerHTML = `<div class="empty"><b>No full-page captures yet</b>Open a page, then click <b>Full-page capture</b> in the Tab Watcher popup.</div>`;
+    wrap.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>No full-page captures yet</b>Open a page, then click <b>Full-page capture</b> in the Tab Watcher popup.</div>`;
     return;
   }
 
   for (const cap of captures) {
-    const card = document.createElement("section");
+    const n = cap.frames.length;
+    const card = document.createElement("button");
     card.className = "cap";
-
-    const h = document.createElement("div");
-    h.className = "cap-head";
-    h.innerHTML = `
-      <div>
-        <h2>${esc(cap.title)}</h2>
-        <div class="meta">${esc(host(cap.url))} · ${new Date(cap.time).toLocaleString()} · <b>${cap.frames.length} screen${cap.frames.length > 1 ? "s" : ""}</b> · page ${Math.round(cap.pageHeight)}px tall</div>
+    card.innerHTML = `
+      <div class="thumb">
+        <img src="${cap.frames[0].dataUrl}" alt="" loading="lazy">
+        <span class="badge">${n} screen${n > 1 ? "s" : ""}</span>
       </div>
-      <div class="acts">
-        <a class="dl" hidden download>Download full page</a>
-        <button data-mode="stitched" class="on">Stitched</button>
-        <button data-mode="frames">Screens</button>
-      </div>`;
-    card.appendChild(h);
-
-    const body = document.createElement("div");
-    body.className = "stage";
-    body.innerHTML = `<div class="hint">Stitching ${cap.frames.length} screens…</div>`;
-    card.appendChild(body);
+      <div class="t">${esc(cap.title)}</div>
+      <div class="m">${esc(host(cap.url))} · ${when(cap.time)}</div>`;
+    card.onclick = () => open(cap);
     wrap.appendChild(card);
-
-    const dl = h.querySelector(".dl");
-    const mode = { v: "stitched" };
-    const stitched = await stitch(cap);
-
-    const drawFrames = () => {
-      body.className = "strip";
-      body.innerHTML = cap.frames
-        .map((f, i) => `<div class="frame"><img src="${f.dataUrl}"><div>Screen ${i + 1} · y ${f.y}px</div></div>`)
-        .join("");
-    };
-
-    const drawStitched = () => {
-      if (!stitched) return drawFrames();
-      body.className = "stage";
-      body.innerHTML = `<div class="hint">Full page · ${cap.frames.length} screens · scroll to read</div><img src="${stitched}" alt="Full page of ${esc(cap.url)}">`;
-      dl.href = stitched;
-      dl.download = `tab-watcher-${host(cap.url)}.jpg`;
-      dl.hidden = false;
-    };
-
-    h.querySelectorAll("button").forEach((b) => {
-      b.onclick = () => {
-        mode.v = b.dataset.mode;
-        h.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-        mode.v === "frames" ? drawFrames() : drawStitched();
-      };
-    });
-
-    drawStitched();
   }
 }
+
+async function open(cap) {
+  const my = ++token;
+  mode = "stitched";
+  setToggles();
+  cur = { cap, stitched: null };
+  detail.hidden = false;
+  document.body.classList.add("locked");
+  document.getElementById("dtitle").textContent = cap.title;
+  document.getElementById("dmeta").textContent =
+    `${host(cap.url)} · ${new Date(cap.time).toLocaleString()} · ${cap.frames.length} screens · page ${Math.round(cap.pageHeight)}px tall`;
+  ddl.hidden = true;
+  dbody.className = "stage";
+  dbody.innerHTML = `<div class="hint">Stitching ${cap.frames.length} screens…</div>`;
+  const stitched = await stitch(cap);
+  if (my !== token) return;
+  cur.stitched = stitched;
+  draw();
+}
+
+function draw() {
+  if (!cur) return;
+  const { cap, stitched } = cur;
+  if (mode === "frames" || !stitched) {
+    dbody.className = "strip";
+    dbody.innerHTML = cap.frames
+      .map((f, i) => `<div class="frame"><img src="${f.dataUrl}" loading="lazy"><div>Screen ${i + 1} · y ${f.y}px</div></div>`)
+      .join("");
+    return;
+  }
+  dbody.className = "stage";
+  dbody.innerHTML = `<img src="${stitched}" alt="Full page of ${esc(cap.url)}">`;
+  ddl.href = stitched;
+  ddl.download = `tab-watcher-${host(cap.url)}.jpg`;
+  ddl.hidden = false;
+}
+
+function setToggles() {
+  document.getElementById("dstitched").classList.toggle("on", mode === "stitched");
+  document.getElementById("dframes").classList.toggle("on", mode === "frames");
+}
+
+function setMode(m) {
+  mode = m;
+  setToggles();
+  draw();
+}
+
+function close() {
+  token++;
+  cur = null;
+  detail.hidden = true;
+  document.body.classList.remove("locked");
+}
+
+document.getElementById("dstitched").onclick = () => setMode("stitched");
+document.getElementById("dframes").onclick = () => setMode("frames");
+document.getElementById("dback").onclick = close;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 
 document.getElementById("clear").onclick = async () => {
   if (confirm("Delete all full-page captures?")) {

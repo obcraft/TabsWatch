@@ -19,4 +19,5 @@ for (const f of ["ort-wasm-simd-threaded.asyncify.mjs", "ort-wasm-simd-threaded.
 }
 await $`rm -f public/tab-watcher.zip`;
 await $`cd extension && nix run nixpkgs#zip -- -qr ../public/tab-watcher.zip .`;
+await $`rm -rf extension/ort`; // generated; too large for the repo, lives only inside the zip
 console.log("built");

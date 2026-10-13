@@ -306,7 +306,7 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
       return;
     }
     if (msg.type === "openDashboard") {
-      await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+      await chrome.tabs.create({ url: chrome.runtime.getURL("newtab.html#saved") });
     }
     if (msg.type === "settingsChanged") {
       await setupAlarm();

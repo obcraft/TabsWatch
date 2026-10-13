@@ -3,7 +3,7 @@
   "name": "Tabs Watch",
   "version": "2.1.0",
   "description": "Saves the articles you open, summarises them with a local AI model, and shows your knowledge on every new tab. Nothing leaves your device.",
-  "permissions": ["tabs", "storage", "alarms", "scripting", "unlimitedStorage", "offscreen"],
+  "permissions": ["tabs", "storage", "alarms", "scripting", "unlimitedStorage", "offscreen", "favicon"],
   "host_permissions": ["<all_urls>"],
   "action": { "default_popup": "popup.html", "default_icon": "icon.png" },
   "background": { "service_worker": "background.js", "type": "module" },

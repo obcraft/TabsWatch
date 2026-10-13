@@ -74,9 +74,15 @@ function render() {
   const list = filtered();
   $("listTitle").textContent = topic ? `Related articles · ${topic}` : $("q").value ? `Results (${list.length})` : "Recently viewed";
   if (!list.length) {
-    $("grid").replaceChildren(el("div", { className: "empty", style: "grid-column:1/-1" },
-      el("b", { textContent: items.length ? "Nothing matches" : "No articles yet" }),
-      items.length ? "Try another search." : "Browse normally — articles you open and read for a few seconds show up here."));
+    $("grid").replaceChildren(items.length
+      ? el("div", { className: "empty", style: "grid-column:1/-1" }, el("b", { textContent: "Nothing matches" }), "Try another search.")
+      : el("div", { className: "hero", style: "grid-column:1/-1" },
+          el("h3", { textContent: "Your reading, in one calm place." }),
+          el("p", { textContent: "Just browse. Articles you read for a few seconds appear here, summarised on this computer. Nothing leaves your device." }),
+          el("div", { className: "steps" },
+            el("div", {}, el("b", { textContent: "1 · Read" }), el("span", { textContent: "Open articles as you normally would." })),
+            el("div", {}, el("b", { textContent: "2 · Summarised offline" }), el("span", { textContent: "The local model works through them one by one." })),
+            el("div", {}, el("b", { textContent: "3 · Recap" }), el("span", { textContent: "The core per topic shows up on every new tab." })))));
     return;
   }
   $("grid").replaceChildren(...list.map((a) => {
@@ -124,7 +130,7 @@ async function renderModel() {
   const on = settings.enabled !== false && settings.knowledge !== false;
   $("dot").classList.toggle("on", on);
   const pending = items.filter((a) => a.status === "pending" || a.status === "processing").length;
-  $("stat").textContent = (on ? "Saving articles" : "Paused") + (pending && model.installed ? ` · ${pending} to summarise` : "");
+  $("stat").textContent = (on ? "Saving articles" : "Paused") + (model.working ? ` · Summarising “${model.working.slice(0, 40)}” · ${model.waiting} waiting` : pending && model.installed ? ` · ${pending} in queue` : "");
   const show = !model.installed || model.state === "downloading" || model.state === "error";
   $("setup").hidden = !show;
   if (model.state === "downloading") {

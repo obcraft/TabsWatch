@@ -47,11 +47,14 @@ async function load() {
     try {
       await setModel({ state: "downloading", error: null });
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback });
-      model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
-        dtype: { embed_tokens: "q4", vision_encoder: "fp16", decoder_model_merged: "q4" },
-        device: "webgpu",
-        progress_callback,
-      });
+      // Faster half-precision kernels when the GPU supports them; plain q4 otherwise.
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+      const f16 = adapter?.features.has("shader-f16");
+      const opts = (q) => ({ dtype: { embed_tokens: q, vision_encoder: "fp16", decoder_model_merged: q }, device: "webgpu", progress_callback });
+      try { model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, opts(f16 ? "q4f16" : "q4")); }
+      catch (e) { if (!f16) throw e; model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, opts("q4")); }
+      // Warm-up: compiles GPU shaders once so the first real article isn't slow.
+      try { const w = await processor("Hi"); await model.generate({ ...w, max_new_tokens: 1 }); } catch {}
       await setModel({ state: "ready", installed: true, error: null });
     } catch (e) {
       model = null;
@@ -82,7 +85,7 @@ Max 5 points. Leave fields empty if unknown. Write in the article's language.`;
 async function generate(prompt) {
   const text = `<|im_start|>system\n${SYSTEM}<|im_end|>\n<|im_start|>user\n${prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`;
   const inputs = await processor(text);
-  const out = await model.generate({ ...inputs, max_new_tokens: 600, do_sample: false });
+  const out = await model.generate({ ...inputs, max_new_tokens: 480, do_sample: false });
   const n = inputs.input_ids.dims[1];
   return processor.batch_decode(out.slice(null, [n, null]), { skip_special_tokens: true })[0];
 }
@@ -143,6 +146,7 @@ async function processQueue() {
       const fresh = await db.get(a.id);
       if (!fresh || fresh.status !== "pending") continue; // deleted meanwhile
       await db.put({ ...fresh, status: "processing", claimedAt: Date.now() });
+      await setModel({ working: fresh.title, waiting: queue.length });
       let next;
       try {
         const analysis = await analyse(fresh);
@@ -155,6 +159,7 @@ async function processQueue() {
     }
   } catch {} finally {
     busy = false;
+    await setModel({ working: null, waiting: 0 });
     scheduleUnload();
   }
 }

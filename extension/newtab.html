@@ -56,9 +56,9 @@ h2{font-size:12px;font-weight:500;color:#6b7280;margin:18px 28px 0;text-transfor
 .rp.alt{border-left-color:#e0e3e6}
 .rp a{display:block;color:#6b7280;font-size:11px;cursor:pointer;text-decoration:none}
 .rp a:hover{color:#1a8f52}
-</style></head><body>
+</style><link rel="stylesheet" href="ui.css"></head><body>
 <header>
-  <h1>Tabs <span>Watch</span></h1>
+  <h1>Tabs Watch</h1>
   <input id="q" placeholder="Search my knowledge…" autocomplete="off">
   <select id="period"><option value="0">All time</option><option value="1">Today</option><option value="7">7 days</option><option value="30">30 days</option></select>
   <select id="site"><option value="">All sites</option></select>
@@ -66,11 +66,11 @@ h2{font-size:12px;font-weight:500;color:#6b7280;margin:18px 28px 0;text-transfor
 </header>
 <div class="setup" id="setup" hidden>
   <div>
-    <b>Install the local AI model</b>
-    <div class="muted" id="setupText">One-time download of about 2.2 GB from Hugging Face. After that, summaries are made on this computer, offline. Articles are saved either way.</div>
+    <b>Download the 2B model for offline analysis</b>
+    <div class="muted" id="setupText">One-time download (about 2.2 GB). After that every saved page is summarised one by one on this computer, fully offline.</div>
     <div class="bar" id="bar" hidden><i id="barFill"></i></div>
   </div>
-  <button class="primary" id="install">Install model</button>
+  <button class="primary" id="install">Download model</button>
 </div>
 <div id="recapWrap"><h2>Your recap · last 14 days</h2><div class="recaps" id="recaps"></div></div>
 <h2>Topics</h2>

@@ -5,7 +5,7 @@
 body{margin:0;font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:400;background:#fff;color:#15171a;-webkit-font-smoothing:antialiased}
 body.locked{overflow:hidden}
 header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 28px;background:#fff;border-bottom:1px solid #eceef0}
-h1{margin:0;font-size:15px;font-weight:500}
+h1{margin:0;font-size:15px;font-weight:500;display:flex;align-items:center;gap:8px}h1::before{display:none}h1 img{display:block}
 h1 span{color:#1a8f52}
 .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 button{background:#fff;color:#15171a;border:1px solid #e0e3e6;border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;font-size:12px;font-weight:400}
@@ -39,7 +39,7 @@ a.dl:hover{background:#f6f7f8}
 .stage.code pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace;background:#fff;border:1px solid #eceef0;border-radius:8px;padding:16px}
 </style><link rel="stylesheet" href="ui.css"></head><body>
 <header>
-  <h1>Tabs Watch</h1>
+  <h1><img src="icon.png" width="22" height="22" alt="">Tabs Watch</h1>
   <div class="acts">
     <span id="count" class="muted"></span>
     <button id="export">Export JSON</button>

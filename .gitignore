@@ -31,3 +31,6 @@ dist-ssr
 *.sln
 *.sw?
 extension/ort/
+
+# Local Netlify folder
+.netlify

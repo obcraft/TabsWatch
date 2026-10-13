@@ -17,3 +17,4 @@
 - The ONNX wasm runtime is copied in only at build time and never committed (`extension/ort/` is git-ignored), because it exceeds the repo's 10 MB file limit.
 - Article knowledge lives in IndexedDB under the extension origin and the local model runs in the offscreen document; never call a cloud model as fallback, because the product promise is local-only analysis.
 - The extension keeps every capture in `chrome.storage.local` and shows it on its own `dashboard.html` tab — no data leaves the device, so do not add a server, upload endpoint, or account system without the user asking for one.
+- Extension pages share base styles in `extension/ui.css`, with page-specific styles loaded afterward; new-tab theme preferences use a dedicated `chrome.storage.local` key so capture settings remain independent.

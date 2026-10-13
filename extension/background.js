@@ -100,11 +100,97 @@ chrome.alarms.onAlarm.addListener(async (a) => {
   if (tab && tab.url && !tab.url.startsWith("chrome")) await snapshot(tab);
 });
 
+// ---- Full-page capture: one screenshot per 100vh of scroll ----
+const MAX_CAPTURES = 6;
+const MAX_FRAMES = 30;
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function pageMetrics(tabId) {
+  const [res] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => ({
+      top: Math.round(window.scrollY),
+      vh: window.innerHeight,
+      sh: document.documentElement.scrollHeight,
+      dpr: window.devicePixelRatio || 1,
+    }),
+  });
+  return res?.result ?? null;
+}
+
+async function scrollTo(tabId, y) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (p) => window.scrollTo(0, p),
+    args: [y],
+  });
+}
+
+async function badge(text) {
+  try {
+    await chrome.action.setBadgeBackgroundColor({ color: "#1a8f52" });
+    await chrome.action.setBadgeText({ text });
+  } catch {}
+}
+
+async function fullCapture(tab) {
+  if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return { ok: false, error: "This page can't be captured." };
+  const start = await pageMetrics(tab.id);
+  if (!start) return { ok: false, error: "This page can't be captured." };
+
+  const frames = [];
+  let last = start;
+  let pos = 0;
+  await badge("...");
+
+  while (frames.length < MAX_FRAMES) {
+    await scrollTo(tab.id, pos);
+    await wait(600);
+    const m = await pageMetrics(tab.id);
+    if (!m) break;
+    last = m;
+    // Skip a final shot that only repeats most of the screen already taken.
+    if (frames.length && m.top - frames[frames.length - 1].y < m.vh * 0.2) break;
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 62 });
+      frames.push({ y: m.top, dataUrl });
+      await badge(String(frames.length));
+    } catch {
+      break;
+    }
+    if (m.top + m.vh >= m.sh - 4) break;
+    pos = m.top + m.vh;
+  }
+
+  await scrollTo(tab.id, start.top);
+  await badge("");
+  if (!frames.length) return { ok: false, error: "Nothing was captured." };
+
+  const capture = {
+    id: Date.now(),
+    url: tab.url,
+    title: tab.title || tab.url,
+    time: Date.now(),
+    dpr: last.dpr,
+    vh: last.vh,
+    pageHeight: frames[frames.length - 1].y + last.vh,
+    frames,
+  };
+
+  const captures = await get("captures", []);
+  captures.unshift(capture);
+  await set({ captures: captures.slice(0, MAX_CAPTURES) });
+  return { ok: true, frames: frames.length };
+}
+
 chrome.runtime.onMessage.addListener((msg, _s, reply) => {
   (async () => {
     if (msg.type === "snapshotNow") { const t = await activeTab(); if (t) { await track(t); await snapshot(t); } }
+    if (msg.type === "fullCapture") { const t = await activeTab(); reply(await fullCapture(t)); return; }
+    if (msg.type === "openDashboard") { await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") }); }
     if (msg.type === "settingsChanged") { await setupAlarm(); if (!(await settings()).enabled) await closeCurrent(); }
-    if (msg.type === "clear") await set({ log: [], shots: [], current: null });
+    if (msg.type === "clear") await set({ log: [], shots: [], captures: [], current: null });
     reply({ ok: true });
   })();
   return true;

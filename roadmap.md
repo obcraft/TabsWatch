@@ -2,11 +2,10 @@
 
 ## Done
 - [x] Chrome extension: track active tab, save history, screenshots, page text, time per site
-- [x] Light theme: white background, black text, single green accent (portal + extension popup)
+- [x] Light theme: white background, black text, single green accent (portal + extension popup + results page)
+- [x] Full-page capture: one screenshot per 100vh of scroll, run only on click (verified in Chrome: 4 screens for a 2800px page)
+- [x] Results dashboard: full-width page inside Chrome, stitched tall image + screen-by-screen view + download
+- [x] Portal page full width
 
-## In progress
-- [ ] Capture every 100vh scroll position of a page (stitched full-page capture), not just the visible screen
-- [ ] Show capture results in a full-width results view
-
-## Blocked / waiting
-- [ ] Decide where results are shown: extension's own dashboard tab (stays on device) vs uploaded to a Cloud-backed dashboard on this site (needs sign-in + privacy trade-off)
+## Open
+- none

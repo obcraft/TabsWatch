@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tab Watcher — Results</title><style>
+*{box-sizing:border-box}
+body{margin:0;font:13px system-ui,sans-serif;background:#fff;color:#15171a}
+header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 28px;background:#fff;border-bottom:1px solid #eceef0}
+h1{margin:0;font-size:16px;font-weight:650}
+h1 span{color:#1a8f52}
+button{background:#fff;color:#15171a;border:1px solid #e0e3e6;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px}
+button:hover{background:#f6f7f8}
+button.on{border-color:#1a8f52;color:#1a8f52;font-weight:600}
+a.dl{color:#15171a;text-decoration:none;border:1px solid #e0e3e6;border-radius:6px;padding:6px 10px;font-size:12px}
+a.dl:hover{background:#f6f7f8}
+.wrap{padding:24px 28px}
+.cap{border:1px solid #eceef0;border-radius:12px;overflow:hidden;margin-bottom:22px;background:#fff}
+.cap-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:14px 18px;border-bottom:1px solid #eceef0}
+.cap-head h2{margin:0;font-size:15px;font-weight:650}
+.meta{color:#6b7280;font-size:12px;margin-top:3px}
+.meta b{color:#1a8f52;font-weight:600}
+.acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.stage{padding:18px;background:#fafbfb;max-height:80vh;overflow:auto}
+.hint{color:#6b7280;font-size:12px;margin-bottom:10px}
+.stage img{display:block;width:100%;border:1px solid #eceef0;border-radius:8px;background:#fff}
+.strip{display:flex;gap:10px;padding:18px;overflow-x:auto;background:#fafbfb}
+.frame{flex:0 0 auto;width:220px}
+.frame img{display:block;width:100%;border:1px solid #eceef0;border-radius:6px}
+.frame div{color:#6b7280;font-size:11px;margin-top:5px}
+.empty{padding:60px 28px;color:#6b7280;text-align:center}
+.empty b{display:block;color:#15171a;font-size:15px;margin-bottom:6px}
+</style></head><body>
+<header>
+  <h1>Tab <span>Watcher</span> — results</h1>
+  <div class="acts">
+    <span id="count" class="muted"></span>
+    <button id="export">Export JSON</button>
+    <button id="clear">Clear captures</button>
+  </div>
+</header>
+<div id="wrap" class="wrap"></div>
+<script src="dashboard.js"></script>
+</body></html>

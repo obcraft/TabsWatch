@@ -7,7 +7,9 @@ async function get(key, def) {
   const r = await chrome.storage.local.get(key);
   return r[key] ?? def;
 }
-async function set(obj) { await chrome.storage.local.set(obj); }
+async function set(obj) {
+  await chrome.storage.local.set(obj);
+}
 
 async function settings() {
   return get("settings", { enabled: true, intervalMin: 1, captureText: true });
@@ -29,24 +31,40 @@ async function grabText(tabId) {
       target: { tabId },
       func: () => ({
         text: (document.body?.innerText || "").slice(0, 5000),
-        headings: [...document.querySelectorAll("h1,h2")].slice(0, 10).map((h) => h.innerText.trim()),
+        headings: [...document.querySelectorAll("h1,h2")]
+          .slice(0, 10)
+          .map((h) => h.innerText.trim()),
         elements: document.getElementsByTagName("*").length,
       }),
     });
     return res?.result ?? null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function track(tab) {
   const s = await settings();
-  if (!s.enabled || !tab || !tab.url || tab.url.startsWith("chrome")) { await closeCurrent(); return; }
+  if (!s.enabled || !tab || !tab.url || tab.url.startsWith("chrome")) {
+    await closeCurrent();
+    return;
+  }
   const cur = await get("current", null);
   if (cur && cur.tabId === tab.id && cur.url === tab.url) {
-    if (cur.title !== tab.title) { cur.title = tab.title; await set({ current: cur }); }
+    if (cur.title !== tab.title) {
+      cur.title = tab.title;
+      await set({ current: cur });
+    }
     return;
   }
   await closeCurrent();
-  const entry = { tabId: tab.id, url: tab.url, title: tab.title, favIconUrl: tab.favIconUrl, start: Date.now() };
+  const entry = {
+    tabId: tab.id,
+    url: tab.url,
+    title: tab.title,
+    favIconUrl: tab.favIconUrl,
+    start: Date.now(),
+  };
   await set({ current: entry });
   if (tab.status === "complete") await snapshot(tab);
 }
@@ -71,7 +89,10 @@ chrome.tabs.onActivated.addListener(async () => track(await activeTab()));
 chrome.tabs.onUpdated.addListener(async (id, info, tab) => {
   if (!tab.active) return;
   if (info.url || info.title) await track(tab);
-  if (info.status === "complete") { await track(tab); await snapshot(tab); }
+  if (info.status === "complete") {
+    await track(tab);
+    await snapshot(tab);
+  }
 });
 chrome.windows.onFocusChanged.addListener(async (w) => {
   if (w === chrome.windows.WINDOW_ID_NONE) await closeCurrent();
@@ -103,7 +124,8 @@ async function badge(text) {
 }
 
 async function fullCapture(tab) {
-  if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return { ok: false, error: "This page can't be captured." };
+  if (!tab || !tab.url || !/^https?:/i.test(tab.url))
+    return { ok: false, error: "This page can't be captured." };
   await badge("...");
   let res;
   try {
@@ -118,8 +140,12 @@ async function fullCapture(tab) {
           const c = copy[i];
           if (!c) return;
           if (el.tagName === "TEXTAREA") c.textContent = el.value;
-          else if (el.tagName === "SELECT") [...c.options].forEach((o, j) => o.toggleAttribute("selected", el.options[j]?.selected));
-          else if (el.type === "checkbox" || el.type === "radio") c.toggleAttribute("checked", el.checked);
+          else if (el.tagName === "SELECT")
+            [...c.options].forEach((o, j) =>
+              o.toggleAttribute("selected", el.options[j]?.selected),
+            );
+          else if (el.type === "checkbox" || el.type === "radio")
+            c.toggleAttribute("checked", el.checked);
           else if (el.type !== "password") c.setAttribute("value", el.value);
         });
         clone.querySelectorAll("script,noscript,input[type=password]").forEach((n) => n.remove());
@@ -164,25 +190,48 @@ async function fullCapture(tab) {
 
 // ---- Knowledge capture: main article only, after 5s visible ----
 const DWELL_MS = 5000;
-const BLOCKED = /(^|\.)(mail\.|outlook\.|bank|paypal\.|accounts?\.)|login|signin|sign-in|checkout|account|wp-admin/i;
+const BLOCKED =
+  /(^|\.)(mail\.|outlook\.|bank|paypal\.|accounts?\.)|login|signin|sign-in|checkout|account|wp-admin/i;
 const pendingTimers = new Map();
 
 async function ensureOffscreen() {
   if (await chrome.offscreen.hasDocument?.()) return;
   try {
-    await chrome.offscreen.createDocument({ url: "offscreen.html", reasons: ["WORKERS"], justification: "Run the local AI model" });
+    await chrome.offscreen.createDocument({
+      url: "offscreen.html",
+      reasons: ["WORKERS"],
+      justification: "Run the local AI model",
+    });
   } catch {}
 }
+// The offscreen document can't touch chrome.storage, so it reports model state here.
+// Writes are chained so rapid progress updates can't overwrite each other.
+let modelWrite = Promise.resolve();
+function patchModel(patch) {
+  modelWrite = modelWrite
+    .then(async () => set({ model: { ...(await get("model", {})), ...patch } }))
+    // Catching keeps the chain alive so one failed write doesn't block later ones.
+    .catch((e) => console.warn("Tabs Watch: couldn't save model state", patch, e));
+  return modelWrite;
+}
+
 async function kick(type = "process") {
+  // Never start the 2.2 GB download unless the user asked for it.
+  if (type === "process" && !(await get("model", {})).installed) return;
   await ensureOffscreen();
-  try { await chrome.runtime.sendMessage({ target: "offscreen", type }); } catch {}
+  try {
+    await chrome.runtime.sendMessage({ target: "offscreen", type });
+  } catch {}
 }
 
 function scheduleArticle(tab) {
   if (!tab?.id || tab.incognito || !/^https?:/i.test(tab.url || "")) return;
   clearTimeout(pendingTimers.get(tab.id));
   const url = tab.url;
-  pendingTimers.set(tab.id, setTimeout(() => captureArticle(tab.id, url), DWELL_MS));
+  pendingTimers.set(
+    tab.id,
+    setTimeout(() => captureArticle(tab.id, url), DWELL_MS),
+  );
 }
 
 async function captureArticle(tabId, url) {
@@ -198,8 +247,13 @@ async function captureArticle(tabId, url) {
   let r;
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
-    [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => window.__tabsWatchExtract?.() });
-  } catch { return; }
+    [r] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => window.__tabsWatchExtract?.(),
+    });
+  } catch {
+    return;
+  }
   const a = r?.result;
   if (!a?.ok) return;
   if ((await chrome.tabs.get(tabId).catch(() => null))?.url !== url) return;
@@ -209,26 +263,55 @@ async function captureArticle(tabId, url) {
   if (versions.some((v) => v.hash === hash)) return; // unchanged article: no new copy
   await db.put({
     id: `${Date.now()}-${hash.slice(0, 8)}`,
-    url: clean, title: a.title, site: a.site, byline: a.byline, published: a.published, lang: a.lang,
-    time: Date.now(), blocks: a.blocks, text: a.text, excerpt: a.excerpt, hash, version: versions.length + 1,
-    source: "dom", status: "pending",
+    url: clean,
+    title: a.title,
+    site: a.site,
+    byline: a.byline,
+    published: a.published,
+    lang: a.lang,
+    time: Date.now(),
+    blocks: a.blocks,
+    text: a.text,
+    excerpt: a.excerpt,
+    hash,
+    version: versions.length + 1,
+    source: "dom",
+    status: "pending",
   });
   const { model = {} } = await chrome.storage.local.get("model");
   if (model.installed) kick();
 }
 
-chrome.tabs.onUpdated.addListener((id, info, tab) => { if (info.status === "complete" && tab.active) scheduleArticle(tab); });
+chrome.tabs.onUpdated.addListener((id, info, tab) => {
+  if (info.status === "complete" && tab.active) scheduleArticle(tab);
+});
 chrome.tabs.onActivated.addListener(async () => scheduleArticle(await activeTab()));
 
 chrome.runtime.onMessage.addListener((msg, _s, reply) => {
   if (msg?.target === "offscreen") return false;
   (async () => {
+    if (msg.type === "modelState") await patchModel(msg.patch);
     if (msg.type === "installModel") await kick("install");
     if (msg.type === "processQueue") await kick();
-    if (msg.type === "snapshotNow") { const t = await activeTab(); if (t) { await track(t); await snapshot(t); } }
-    if (msg.type === "fullCapture") { const t = await activeTab(); reply(await fullCapture(t)); return; }
-    if (msg.type === "openDashboard") { await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") }); }
-    if (msg.type === "settingsChanged") { await setupAlarm(); if (!(await settings()).enabled) await closeCurrent(); }
+    if (msg.type === "snapshotNow") {
+      const t = await activeTab();
+      if (t) {
+        await track(t);
+        await snapshot(t);
+      }
+    }
+    if (msg.type === "fullCapture") {
+      const t = await activeTab();
+      reply(await fullCapture(t));
+      return;
+    }
+    if (msg.type === "openDashboard") {
+      await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+    }
+    if (msg.type === "settingsChanged") {
+      await setupAlarm();
+      if (!(await settings()).enabled) await closeCurrent();
+    }
     if (msg.type === "clear") await set({ log: [], shots: [], captures: [], current: null });
     reply({ ok: true });
   })();
@@ -238,5 +321,11 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
 // Resume unfinished analyses after a browser restart.
 chrome.runtime.onStartup.addListener(async () => {
   const { model = {} } = await chrome.storage.local.get("model");
-  if (model.installed && (await db.byStatus("pending")).length + (await db.byStatus("processing")).length) kick();
+  // A download cut off by closing the browser would otherwise show progress forever.
+  if (model.state === "downloading") await patchModel({ state: "idle", working: null, waiting: 0 });
+  if (
+    model.installed &&
+    (await db.byStatus("pending")).length + (await db.byStatus("processing")).length
+  )
+    kick();
 });

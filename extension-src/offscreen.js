@@ -21,26 +21,34 @@ let loading = null;
 let busy = false;
 let idleTimer = null;
 
-const setModel = async (patch) => {
-  const { model: cur = {} } = await chrome.storage.local.get("model");
-  await chrome.storage.local.set({ model: { ...cur, ...patch, id: MODEL_ID } });
-};
+// Offscreen documents can only use chrome.runtime, so the background worker stores model state.
+const setModel = (patch) =>
+  chrome.runtime
+    .sendMessage({ type: "modelState", patch: { ...patch, id: MODEL_ID } })
+    .catch((e) => console.warn("Tabs Watch: couldn't report model state", patch, e));
 
 async function load() {
   if (model) return;
   if (loading) return loading;
   loading = (async () => {
     if (!navigator.gpu) {
-      await setModel({ state: "error", error: "This computer/browser has no WebGPU. Articles are still saved and searchable." });
+      await setModel({
+        state: "error",
+        error: "This computer/browser has no WebGPU. Articles are still saved and searchable.",
+      });
       throw new Error("no webgpu");
     }
     const files = {};
+    let sentAt = 0;
     const progress_callback = (p) => {
       if (p.status === "progress" && p.total) {
         files[p.file] = { loaded: p.loaded, total: p.total };
         const v = Object.values(files);
         const loaded = v.reduce((a, f) => a + f.loaded, 0);
         const total = v.reduce((a, f) => a + f.total, 0);
+        // Progress fires for every network chunk; report at most twice a second.
+        if (Date.now() - sentAt < 500 && loaded < total) return;
+        sentAt = Date.now();
         setModel({ state: "downloading", loaded, total });
       }
     };
@@ -50,11 +58,25 @@ async function load() {
       // Faster half-precision kernels when the GPU supports them; plain q4 otherwise.
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
       const f16 = adapter?.features.has("shader-f16");
-      const opts = (q) => ({ dtype: { embed_tokens: q, vision_encoder: "fp16", decoder_model_merged: q }, device: "webgpu", progress_callback });
-      try { model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, opts(f16 ? "q4f16" : "q4")); }
-      catch (e) { if (!f16) throw e; model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, opts("q4")); }
+      const opts = (q) => ({
+        dtype: { embed_tokens: q, vision_encoder: "fp16", decoder_model_merged: q },
+        device: "webgpu",
+        progress_callback,
+      });
+      try {
+        model = await Qwen3_5ForConditionalGeneration.from_pretrained(
+          MODEL_ID,
+          opts(f16 ? "q4f16" : "q4"),
+        );
+      } catch (e) {
+        if (!f16) throw e;
+        model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, opts("q4"));
+      }
       // Warm-up: compiles GPU shaders once so the first real article isn't slow.
-      try { const w = await processor("Hi"); await model.generate({ ...w, max_new_tokens: 1 }); } catch {}
+      try {
+        const w = await processor("Hi");
+        await model.generate({ ...w, max_new_tokens: 1 });
+      } catch {}
       await setModel({ state: "ready", installed: true, error: null });
     } catch (e) {
       model = null;
@@ -70,7 +92,9 @@ async function load() {
 function scheduleUnload() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(async () => {
-    try { await model?.dispose(); } catch {}
+    try {
+      await model?.dispose();
+    } catch {}
     model = null;
     processor = null;
     await setModel({ state: "idle" });
@@ -95,17 +119,41 @@ function parse(raw, blocks) {
   if (!m) throw new Error("no json");
   const j = JSON.parse(m[0]);
   if (typeof j.summary !== "string" || !Array.isArray(j.points)) throw new Error("bad schema");
-  const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
-  const points = j.points.slice(0, 5).map((p) => {
-    const b = Number(p.block);
-    const quote = String(p.quote || "");
-    // Verify provenance: the quote must really appear in the cited (or any) block.
-    let idx = blocks[b - 1] && norm(blocks[b - 1]).includes(norm(quote)) ? b - 1 : -1;
-    if (idx < 0 && quote) idx = blocks.findIndex((t) => norm(t).includes(norm(quote)));
-    return { point: String(p.point || ""), block: idx >= 0 ? idx + 1 : null, quote: idx >= 0 ? quote : null, verified: idx >= 0 };
-  }).filter((p) => p.point);
-  const list = (a) => (Array.isArray(a) ? a.map(String).map((s) => s.trim()).filter(Boolean).slice(0, 8) : []);
-  return { summary: j.summary.trim(), points, topics: list(j.topics).map((t) => t.toLowerCase()), entities: list(j.entities) };
+  const norm = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  const points = j.points
+    .slice(0, 5)
+    .map((p) => {
+      const b = Number(p.block);
+      const quote = String(p.quote || "");
+      // Verify provenance: the quote must really appear in the cited (or any) block.
+      let idx = blocks[b - 1] && norm(blocks[b - 1]).includes(norm(quote)) ? b - 1 : -1;
+      if (idx < 0 && quote) idx = blocks.findIndex((t) => norm(t).includes(norm(quote)));
+      return {
+        point: String(p.point || ""),
+        block: idx >= 0 ? idx + 1 : null,
+        quote: idx >= 0 ? quote : null,
+        verified: idx >= 0,
+      };
+    })
+    .filter((p) => p.point);
+  const list = (a) =>
+    Array.isArray(a)
+      ? a
+          .map(String)
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, 8)
+      : [];
+  return {
+    summary: j.summary.trim(),
+    points,
+    topics: list(j.topics).map((t) => t.toLowerCase()),
+    entities: list(j.entities),
+  };
 }
 
 async function analyse(a) {
@@ -122,8 +170,13 @@ async function analyse(a) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const raw = await generate(attempt ? prompt + "\n\nReturn valid JSON only." : prompt);
-      return { ...parse(raw, a.blocks), coverage: lines.length < a.blocks.length ? "partial" : "full" };
-    } catch (e) { lastErr = e; }
+      return {
+        ...parse(raw, a.blocks),
+        coverage: lines.length < a.blocks.length ? "partial" : "full",
+      };
+    } catch (e) {
+      lastErr = e;
+    }
   }
   throw lastErr;
 }
@@ -132,11 +185,11 @@ async function processQueue() {
   if (busy) return;
   busy = true;
   try {
-    const { model: m = {} } = await chrome.storage.local.get("model");
-    if (!m.installed) return;
+    // The background only sends "process" once the user has installed the model.
     // Recover stale claims (e.g. after a crash).
     for (const a of await db.byStatus("processing")) {
-      if (Date.now() - (a.claimedAt || 0) > 5 * 60 * 1000) await db.put({ ...a, status: "pending" });
+      if (Date.now() - (a.claimedAt || 0) > 5 * 60 * 1000)
+        await db.put({ ...a, status: "pending" });
     }
     let queue = await db.byStatus("pending");
     if (!queue.length) return;
@@ -150,14 +203,21 @@ async function processQueue() {
       let next;
       try {
         const analysis = await analyse(fresh);
-        next = { ...fresh, status: "completed", analysis, modelId: MODEL_ID, promptVersion: PROMPT_VERSION };
+        next = {
+          ...fresh,
+          status: "completed",
+          analysis,
+          modelId: MODEL_ID,
+          promptVersion: PROMPT_VERSION,
+        };
       } catch (e) {
         next = { ...fresh, status: "failed", error: String(e?.message || e) };
       }
       if (await db.get(a.id)) await db.put(next); // don't resurrect deleted items
       queue = await db.byStatus("pending");
     }
-  } catch {} finally {
+  } catch {
+  } finally {
     busy = false;
     await setModel({ working: null, waiting: 0 });
     scheduleUnload();
@@ -166,7 +226,10 @@ async function processQueue() {
 
 chrome.runtime.onMessage.addListener((msg, _s, reply) => {
   if (msg?.target !== "offscreen") return false;
-  if (msg.type === "install") load().then(processQueue).catch(() => {});
+  if (msg.type === "install")
+    load()
+      .then(processQueue)
+      .catch(() => {});
   if (msg.type === "process") processQueue();
   reply({ ok: true });
   return false;

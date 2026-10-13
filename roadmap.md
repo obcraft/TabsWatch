@@ -8,8 +8,8 @@
 - [x] Portal page full width
 
 ## Open
-- [ ] Restyle the new tab to match the homepage, with a new logo and light/dark toggle
-- [ ] Restyle the extension popup to match the homepage
+- [x] Restyle the new tab to match the homepage, with a new logo and light/dark toggle
+- [x] Restyle the extension popup to match the homepage
 - [x] Clean white Apple/Google-like look: popup, new tab, results page, download page
 - [x] Faster local model (half-precision on capable GPUs, warm-up, shorter output)
 - [x] Visible 2B model download + one-by-one summary queue status

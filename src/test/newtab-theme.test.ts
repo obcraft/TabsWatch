@@ -20,7 +20,7 @@ describe("new tab theme preference", () => {
   it("defaults to light for a new installation", async () => {
     const s = setup();
     await initTheme(s.storage, s.root, s.toggle);
-    expect(s.root.dataset.theme).toBe("light");
+    expect(s.root.dataset["theme"]).toBe("light");
   });
   it("remembers the selected dark theme on reopening", async () => {
     const s = setup();
@@ -29,7 +29,7 @@ describe("new tab theme preference", () => {
     expect(s.read()).toBe("dark");
     const reopened = setup(s.read());
     await initTheme(reopened.storage, reopened.root, reopened.toggle);
-    expect(reopened.root.dataset.theme).toBe("dark");
+    expect(reopened.root.dataset["theme"]).toBe("dark");
     reopened.toggle.click();
     expect(reopened.read()).toBe("light");
   });

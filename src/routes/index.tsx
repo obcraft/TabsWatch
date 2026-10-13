@@ -38,26 +38,29 @@ function Index() {
   return (
     <main className="min-h-screen bg-background text-foreground px-6 py-20">
       <div className="mx-auto max-w-2xl">
-        <p className="text-sm uppercase tracking-widest text-primary">Chrome extension</p>
-        <h1 className="mt-3 text-5xl font-bold tracking-tight">Tab Watcher</h1>
+        <p className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-brand">
+          <span className="h-1.5 w-1.5 rounded-full bg-brand" /> Chrome extension
+        </p>
+        <h1 className="mt-3 text-5xl font-bold tracking-tight text-foreground">Tab Watcher</h1>
         <p className="mt-4 text-lg text-muted-foreground">
           Tracks, saves and monitors what your active tab is rendering. All data stays on your device.
         </p>
-        <button onClick={download} className="mt-8 rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90">
+        <button onClick={download} className="mt-8 rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/85">
           Download extension
         </button>
         <div className="mt-12 grid gap-4 sm:grid-cols-2">
           {features.map(([t, d]) => (
             <div key={t} className="rounded-xl border border-border bg-card p-5">
-              <h3 className="font-semibold text-primary">{t}</h3>
+              <span className="block h-1 w-6 rounded-full bg-brand" />
+              <h3 className="mt-3 font-semibold text-foreground">{t}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{d}</p>
             </div>
           ))}
         </div>
-        <h2 className="mt-14 text-2xl font-bold">Install</h2>
-        <ol className="mt-4 list-decimal space-y-2 pl-5 text-muted-foreground">
+        <h2 className="mt-14 text-2xl font-bold text-foreground">Install</h2>
+        <ol className="mt-4 list-decimal space-y-2 pl-5 text-muted-foreground marker:text-brand">
           <li>Unzip the downloaded file.</li>
-          <li>Open <code className="text-foreground">chrome://extensions</code>.</li>
+          <li>Open <code className="rounded bg-muted px-1.5 py-0.5 text-foreground">chrome://extensions</code>.</li>
           <li>Turn on <b className="text-foreground">Developer mode</b> (top right).</li>
           <li>Click <b className="text-foreground">Load unpacked</b> and pick the unzipped folder.</li>
         </ol>

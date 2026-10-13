@@ -1,18 +1,22 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><style>
-body{width:380px;margin:0;font:13px system-ui,sans-serif;background:#141816;color:#e8eee4}
-header{padding:12px 14px;border-bottom:1px solid #2a312c;display:flex;justify-content:space-between;align-items:center}
-h1{font-size:15px;margin:0;color:#bef05a}
-.now{padding:10px 14px;background:#1c221e}
-.muted{color:#8a978d;font-size:11px}
-.row{display:flex;gap:6px;padding:8px 14px;flex-wrap:wrap}
-button{background:#2a312c;color:#e8eee4;border:0;border-radius:6px;padding:6px 9px;cursor:pointer;font-size:12px}
-button.p{background:#bef05a;color:#141816;font-weight:600}
-.tabs button.on{outline:1px solid #bef05a}
+body{width:380px;margin:0;font:13px system-ui,sans-serif;background:#fff;color:#15171a}
+header{padding:12px 14px;border-bottom:1px solid #eceef0;display:flex;justify-content:space-between;align-items:center}
+h1{font-size:15px;margin:0;color:#15171a;font-weight:650}
+.now{padding:10px 14px;background:#fafbfb;border-bottom:1px solid #eceef0}
+.muted{color:#6b7280;font-size:11px}
+.row{display:flex;gap:6px;padding:8px 14px;flex-wrap:wrap;align-items:center}
+button{background:#fff;color:#15171a;border:1px solid #e0e3e6;border-radius:6px;padding:6px 9px;cursor:pointer;font-size:12px}
+button:hover{background:#f6f7f8}
+button.p{background:#15171a;color:#fff;border-color:#15171a;font-weight:600}
+button.p:hover{background:#33373c}
+.tabs button.on{border-color:#1a8f52;color:#1a8f52;font-weight:600}
+input[type=checkbox],input[type=number]{accent-color:#1a8f52}
+input[type=number]{border:1px solid #e0e3e6;border-radius:5px;padding:3px 4px}
 ul{list-style:none;margin:0;padding:0 14px 12px;max-height:300px;overflow:auto}
-li{padding:7px 0;border-bottom:1px solid #222a24}
+li{padding:7px 0;border-bottom:1px solid #f1f2f4}
 .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-img{width:100%;border-radius:6px;margin-top:4px}
+img{width:100%;border-radius:6px;margin-top:4px;border:1px solid #eceef0}
 label{display:flex;gap:6px;align-items:center}
 </style></head><body>
 <header><h1>Tab Watcher</h1><label><input type="checkbox" id="enabled"> On</label></header>

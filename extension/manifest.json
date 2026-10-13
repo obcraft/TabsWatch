@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Watcher",
+  "version": "1.0.0",
+  "description": "Tracks, saves and monitors what your active tab is rendering: URL, title, time spent, page text and screenshots.",
+  "permissions": ["tabs", "storage", "alarms", "scripting", "unlimitedStorage"],
+  "host_permissions": ["<all_urls>"],
+  "action": { "default_popup": "popup.html", "default_icon": "icon.png" },
+  "background": { "service_worker": "background.js" },
+  "icons": { "48": "icon.png", "128": "icon.png" }
+}

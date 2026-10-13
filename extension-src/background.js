@@ -10,7 +10,7 @@ async function get(key, def) {
 async function set(obj) { await chrome.storage.local.set(obj); }
 
 async function settings() {
-  return get("settings", { enabled: true, screenshots: true, intervalMin: 1, captureText: true });
+  return get("settings", { enabled: true, intervalMin: 1, captureText: true });
 }
 
 async function closeCurrent() {
@@ -37,15 +37,6 @@ async function grabText(tabId) {
   } catch { return null; }
 }
 
-async function screenshot(windowId, url) {
-  try {
-    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 50 });
-    const shots = await get("shots", []);
-    shots.unshift({ time: Date.now(), url, dataUrl });
-    await set({ shots: shots.slice(0, MAX_SHOTS) });
-  } catch {}
-}
-
 async function track(tab) {
   const s = await settings();
   if (!s.enabled || !tab || !tab.url || tab.url.startsWith("chrome")) { await closeCurrent(); return; }
@@ -69,7 +60,6 @@ async function snapshot(tab) {
     cur.title = tab.title;
     await set({ current: cur });
   }
-  if (s.screenshots) await screenshot(tab.windowId, tab.url);
 }
 
 async function activeTab() {
@@ -101,32 +91,9 @@ chrome.alarms.onAlarm.addListener(async (a) => {
   if (tab && tab.url && !tab.url.startsWith("chrome")) await snapshot(tab);
 });
 
-// ---- Full-page capture: one screenshot per 100vh of scroll ----
-const MAX_CAPTURES = 6;
-const MAX_FRAMES = 30;
-
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function pageMetrics(tabId) {
-  const [res] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => ({
-      top: Math.round(window.scrollY),
-      vh: window.innerHeight,
-      sh: document.documentElement.scrollHeight,
-      dpr: window.devicePixelRatio || 1,
-    }),
-  });
-  return res?.result ?? null;
-}
-
-async function scrollTo(tabId, y) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (p) => window.scrollTo(0, p),
-    args: [y],
-  });
-}
+// ---- Page capture: the rendered DOM as HTML (no screenshots) ----
+const MAX_CAPTURES = 20;
+const MAX_HTML = 4_000_000;
 
 async function badge(text) {
   try {
@@ -137,52 +104,62 @@ async function badge(text) {
 
 async function fullCapture(tab) {
   if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return { ok: false, error: "This page can't be captured." };
-  const start = await pageMetrics(tab.id);
-  if (!start) return { ok: false, error: "This page can't be captured." };
-
-  const frames = [];
-  let last = start;
-  let pos = 0;
   await badge("...");
-
-  while (frames.length < MAX_FRAMES) {
-    await scrollTo(tab.id, pos);
-    await wait(600);
-    const m = await pageMetrics(tab.id);
-    if (!m) break;
-    last = m;
-    // Skip a final shot that only repeats most of the screen already taken.
-    if (frames.length && m.top - frames[frames.length - 1].y < m.vh * 0.2) break;
-    try {
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 62 });
-      frames.push({ y: m.top, dataUrl });
-      await badge(String(frames.length));
-    } catch {
-      break;
-    }
-    if (m.top + m.vh >= m.sh - 4) break;
-    pos = m.top + m.vh;
+  let res;
+  try {
+    [res] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        // Serialise the live, rendered DOM; copy current form values into attributes.
+        const clone = document.documentElement.cloneNode(true);
+        const live = document.querySelectorAll("input,textarea,select");
+        const copy = clone.querySelectorAll("input,textarea,select");
+        live.forEach((el, i) => {
+          const c = copy[i];
+          if (!c) return;
+          if (el.tagName === "TEXTAREA") c.textContent = el.value;
+          else if (el.tagName === "SELECT") [...c.options].forEach((o, j) => o.toggleAttribute("selected", el.options[j]?.selected));
+          else if (el.type === "checkbox" || el.type === "radio") c.toggleAttribute("checked", el.checked);
+          else if (el.type !== "password") c.setAttribute("value", el.value);
+        });
+        clone.querySelectorAll("script,noscript,input[type=password]").forEach((n) => n.remove());
+        const head = clone.querySelector("head");
+        if (head) {
+          const base = document.createElement("base");
+          base.href = location.href;
+          head.prepend(base);
+        }
+        return {
+          html: "<!doctype html>\n" + clone.outerHTML,
+          text: (document.body?.innerText || "").slice(0, 200000),
+          elements: document.getElementsByTagName("*").length,
+          pageHeight: document.documentElement.scrollHeight,
+        };
+      },
+    });
+  } catch {
+    await badge("");
+    return { ok: false, error: "This page can't be captured." };
   }
-
-  await scrollTo(tab.id, start.top);
   await badge("");
-  if (!frames.length) return { ok: false, error: "Nothing was captured." };
-
+  const r = res?.result;
+  if (!r?.html) return { ok: false, error: "Nothing was captured." };
   const capture = {
     id: Date.now(),
     url: tab.url,
     title: tab.title || tab.url,
     time: Date.now(),
-    dpr: last.dpr,
-    vh: last.vh,
-    pageHeight: frames[frames.length - 1].y + last.vh,
-    frames,
+    html: r.html.slice(0, MAX_HTML),
+    truncated: r.html.length > MAX_HTML,
+    size: r.html.length,
+    text: r.text,
+    elements: r.elements,
+    pageHeight: r.pageHeight,
   };
-
   const captures = await get("captures", []);
   captures.unshift(capture);
   await set({ captures: captures.slice(0, MAX_CAPTURES) });
-  return { ok: true, frames: frames.length };
+  return { ok: true };
 }
 
 // ---- Knowledge capture: main article only, after 5s visible ----

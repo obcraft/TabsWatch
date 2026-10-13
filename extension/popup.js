@@ -5,9 +5,13 @@ const dur = (ms) => { const s = Math.round(ms / 1000); return s < 60 ? s + "s" :
 const host = (u) => { try { return new URL(u).hostname; } catch { return u; } };
 
 async function render() {
-  const { log = [], shots = [], current, settings = { enabled: true, screenshots: true, intervalMin: 1, captureText: true } } =
-    await chrome.storage.local.get(["log", "shots", "current", "settings"]);
-  for (const k of ["enabled", "screenshots", "captureText"]) $(k).checked = settings[k];
+  const { log = [], current, model = {}, settings = { enabled: true, intervalMin: 1, captureText: true } } =
+    await chrome.storage.local.get(["log", "current", "settings", "model"]);
+  for (const k of ["enabled", "captureText"]) $(k).checked = settings[k];
+  const mt = $("modelText"), mb = $("install");
+  if (model.state === "downloading") { mt.textContent = `Downloading model… ${Math.round(((model.loaded || 0) / (model.total || 1)) * 100)}% of ~2.2 GB`; mb.hidden = true; }
+  else if (model.installed) { mt.textContent = "Local AI model ready · runs offline"; mb.hidden = true; }
+  else { mt.textContent = model.state === "error" ? `Model failed: ${model.error}` : "Local AI model · one-time download, about 2.2 GB"; mb.hidden = false; mb.textContent = model.state === "error" ? "Try again" : "Download model"; }
   $("intervalMin").value = settings.intervalMin;
   $("now").innerHTML = current
     ? `<div class="t"><b>${esc(current.title)}</b></div><div class="muted t">${esc(current.url)}</div>
@@ -17,8 +21,6 @@ async function render() {
   const list = $("list");
   if (view === "log") {
     list.innerHTML = log.map((e) => `<li><div class="t">${esc(e.title)}</div><div class="muted t">${esc(host(e.url))} · ${dur(e.durationMs)} · ${new Date(e.start).toLocaleTimeString()}</div></li>`).join("") || `<li class="muted">No history yet</li>`;
-  } else if (view === "shots") {
-    list.innerHTML = shots.map((s) => `<li><div class="muted t">${new Date(s.time).toLocaleString()} · ${esc(host(s.url))}</div><img src="${s.dataUrl}"></li>`).join("") || `<li class="muted">No screenshots yet</li>`;
   } else {
     const totals = {};
     for (const e of log) totals[host(e.url)] = (totals[host(e.url)] || 0) + e.durationMs;
@@ -27,27 +29,28 @@ async function render() {
 }
 
 async function saveSettings() {
-  const settings = { enabled: $("enabled").checked, screenshots: $("screenshots").checked, captureText: $("captureText").checked, intervalMin: Number($("intervalMin").value) || 1 };
+  const settings = { enabled: $("enabled").checked, captureText: $("captureText").checked, intervalMin: Number($("intervalMin").value) || 1 };
   await chrome.storage.local.set({ settings });
   chrome.runtime.sendMessage({ type: "settingsChanged" });
 }
-["enabled", "screenshots", "captureText", "intervalMin"].forEach((id) => $(id).addEventListener("change", saveSettings));
+["enabled", "captureText", "intervalMin"].forEach((id) => $(id).addEventListener("change", saveSettings));
 
 $("snap").onclick = async () => { await chrome.runtime.sendMessage({ type: "snapshotNow" }); render(); };
+$("install").onclick = () => { $("install").hidden = true; chrome.runtime.sendMessage({ type: "installModel" }); };
 $("dash").onclick = () => chrome.runtime.sendMessage({ type: "openDashboard" });
 $("full").onclick = async () => {
   const b = $("full");
   b.disabled = true;
-  b.textContent = "Capturing…";
+  b.textContent = "Saving…";
   const r = await chrome.runtime.sendMessage({ type: "fullCapture" });
   b.disabled = false;
-  b.textContent = "Full-page capture";
+  b.textContent = "Save page HTML";
   if (!r?.ok) alert(r?.error || "Capture failed.");
   render();
 };
 $("clear").onclick = async () => { if (confirm("Delete all saved data?")) { await chrome.runtime.sendMessage({ type: "clear" }); render(); } };
 $("export").onclick = async () => {
-  const data = await chrome.storage.local.get(["log", "shots", "captures", "current"]);
+  const data = await chrome.storage.local.get(["log", "captures", "current"]);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
   a.download = `tab-watcher-${Date.now()}.json`;

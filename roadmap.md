@@ -12,3 +12,5 @@
 - [x] Clean white Apple/Google-like look: popup, new tab, results page, download page
 - [x] Faster local model (half-precision on capable GPUs, warm-up, shorter output)
 - [x] Visible 2B model download + one-by-one summary queue status
+- [x] Replace screenshots with DOM HTML capture
+- [x] Model download (2.2 GB) visible in popup + new tab

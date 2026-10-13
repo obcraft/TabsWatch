@@ -257,3 +257,9 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
   })();
   return true;
 });
+
+// Resume unfinished analyses after a browser restart.
+chrome.runtime.onStartup.addListener(async () => {
+  const { model = {} } = await chrome.storage.local.get("model");
+  if (model.installed && (await db.byStatus("pending")).length + (await db.byStatus("processing")).length) kick();
+});

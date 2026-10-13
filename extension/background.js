@@ -1,4 +1,4 @@
-// Tab Watcher background worker
+// Tabs Watch background worker
 const MAX_ENTRIES = 500;
 const MAX_SHOTS = 50;
 

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Tab Watcher",
+  "name": "Tabs Watch",
   "version": "1.0.0",
   "description": "Tracks, saves and monitors what your active tab is rendering: URL, title, time spent, page text and screenshots.",
   "permissions": ["tabs", "storage", "alarms", "scripting", "unlimitedStorage"],

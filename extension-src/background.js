@@ -10,7 +10,7 @@ async function get(key, def) {
 async function set(obj) { await chrome.storage.local.set(obj); }
 
 async function settings() {
-  return get("settings", { enabled: true, screenshots: true, intervalMin: 1, captureText: true });
+  return get("settings", { enabled: true, intervalMin: 1, captureText: true });
 }
 
 async function closeCurrent() {

@@ -21,8 +21,12 @@ label{display:flex;gap:6px;align-items:center}
 </style><link rel="stylesheet" href="ui.css"></head><body>
 <header><h1>Tabs Watch</h1><label><input type="checkbox" id="enabled"> On</label></header>
 <div class="now" id="now"></div>
+<div class="row" id="modelRow" style="border-bottom:1px solid #eceef0;justify-content:space-between">
+  <span class="muted" id="modelText">Local AI model · one-time download, about 2.2 GB</span>
+  <button class="p" id="install">Download model</button>
+</div>
 <div class="row">
-  <button class="p" id="full">Full-page capture</button>
+  <button class="p" id="full">Save page HTML</button>
   <button id="dash">Open results</button>
 </div>
 <div class="row">
@@ -31,11 +35,10 @@ label{display:flex;gap:6px;align-items:center}
   <button id="clear">Clear</button>
 </div>
 <div class="row">
-  <label><input type="checkbox" id="screenshots"> Screenshots</label>
   <label><input type="checkbox" id="captureText"> Page text</label>
   <label>every <input type="number" id="intervalMin" min="0.5" step="0.5" style="width:44px"> min</label>
 </div>
-<div class="row tabs"><button data-v="log" class="on">History</button><button data-v="shots">Screenshots</button><button data-v="stats">Time per site</button></div>
+<div class="row tabs"><button data-v="log" class="on">History</button><button data-v="stats">Time per site</button></div>
 <ul id="list"></ul>
 <script src="popup.js"></script>
 </body></html>

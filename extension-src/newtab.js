@@ -30,7 +30,7 @@ function filtered() {
 function summaryText(a) {
   if (a.status === "completed") return a.analysis.summary;
   if (a.status === "failed") return "Analysis not available.";
-  return a.status === "processing" ? "Summarising…" : (a.blocks?.[0] || "").slice(0, 220);
+  return a.status === "processing" ? "Summarising…" : (a.excerpt || a.blocks?.find((b) => b.length > 120) || "").slice(0, 220);
 }
 
 function renderTopics() {

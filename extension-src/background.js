@@ -233,7 +233,7 @@ async function captureArticle(tabId, url) {
   await db.put({
     id: `${Date.now()}-${hash.slice(0, 8)}`,
     url: clean, title: a.title, site: a.site, byline: a.byline, published: a.published, lang: a.lang,
-    time: Date.now(), blocks: a.blocks, text: a.text, hash, version: versions.length + 1,
+    time: Date.now(), blocks: a.blocks, text: a.text, excerpt: a.excerpt, hash, version: versions.length + 1,
     source: "dom", status: "pending",
   });
   const { model = {} } = await chrome.storage.local.get("model");

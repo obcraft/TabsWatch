@@ -1,6 +1,7 @@
 import * as db from "./db.js";
 import { buildRecaps } from "./recap.js";
 import { initTheme, normalizeTheme } from "./theme.js";
+import { pageKey } from "./url.js";
 
 const $ = (id) => document.getElementById(id);
 const host = (u) => {
@@ -22,15 +23,17 @@ const kb = (n) =>
   n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB";
 const hue = (s) => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
-const icon = (paths) => {
+const icon = (paths, size = 34) => {
   const t = document.createElement("template");
-  t.innerHTML = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  t.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   return t.content.firstChild;
 };
 const BOOK =
   '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>';
 const PAGE =
   '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>';
+const CHECK = '<path d="M5 12.5l4.5 4.5L19 7"/>';
+const CLOCK = '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>';
 
 function ago(t) {
   const min = Math.round((Date.now() - t) / 6e4);
@@ -243,7 +246,7 @@ function renderArticles() {
       empty(
         BOOK,
         "Nothing here yet.",
-        "Spend a moment on an article and it will appear here, summarised on this computer.",
+        "Spend a few seconds on any page and it will appear here, summarised on this computer.",
       ),
     );
   if (!list.length)
@@ -279,6 +282,8 @@ function renderSaved() {
     return $("savedGrid").replaceChildren(empty(null, "No matches.", "Try another search."));
   $("savedGrid").replaceChildren(
     ...list.map((c) => {
+      const a = articleFor(c);
+      const s = a && state(a);
       const t = el(
         "button",
         { className: "tile" },
@@ -290,10 +295,12 @@ function renderSaved() {
           el("time", { textContent: ago(c.time) }),
         ),
         el("div", { className: "tile-title", textContent: c.title }),
+        a?.status === "completed" &&
+          el("p", { className: "tile-sum", textContent: a.analysis.summary }),
         el(
           "div",
           { className: "tile-foot" },
-          el("span", { className: "state", textContent: "Full page" }),
+          el("span", { className: `state ${s?.cls || ""}`, textContent: s?.text || "Full page" }),
           el("span", {
             className: "fine",
             textContent: kb(c.size || c.html.length) + (c.truncated ? " · cut off" : ""),
@@ -374,12 +381,14 @@ function articleSummary(a) {
             ? "This article is in line for a summary."
             : "Download the on-device model in Settings to get summaries.";
     const sum = summaryText(a);
+    const live = inQueue(a) && model.installed;
     return [
       el(
         "div",
         { className: "notice" },
         el("b", { textContent: state(a).text }),
         el("p", { textContent: why }),
+        live && liveBar(a),
       ),
       sum && el("p", { className: "lead", textContent: sum }),
     ].filter(Boolean);
@@ -406,11 +415,13 @@ function articleSummary(a) {
 }
 
 function quote(p) {
-  if (!p.quote) return el("span", { className: "fine", textContent: "Source not verified" });
+  if (!p.quote && !p.block)
+    return el("span", { className: "fine", textContent: "Source not verified" });
   if (!p.block) return el("span", { className: "quote", textContent: `“${p.quote}”` });
   const b = el("button", {
     className: "quote",
-    textContent: `“${p.quote}” — paragraph ${p.block}`,
+    // Without a quote the paragraph is the closest match, not a citation.
+    textContent: p.quote ? `“${p.quote}” — paragraph ${p.block}` : `See paragraph ${p.block}`,
   });
   b.onclick = () => {
     articleTab = "text";
@@ -489,9 +500,18 @@ function showRecap(r) {
 
 /* Saved page sheet */
 
+// The library copy of a saved page (same address), which carries its summary.
+const articleFor = (c) => items.find((a) => a.url === pageKey(c.url));
+
 function showPage(c) {
   openPage = c;
   pageMode = "page";
+  const a = articleFor(c);
+  $("pSummary").hidden = !a;
+  $("pSummary").onclick = () => {
+    $("pageDlg").close();
+    showArticle(a);
+  };
   $("pSite").replaceChildren(siteIcon(c.url), el("span", { textContent: host(c.url) }));
   $("pTitle").textContent = c.title;
   $("pMeta").textContent = [
@@ -631,16 +651,12 @@ async function renderModel() {
   model = m;
   const on = settings.enabled !== false && settings.knowledge !== false;
   $("dot").classList.toggle("on", on);
-  const pending = items.filter((a) => a.status === "pending" || a.status === "processing").length;
-  $("stat").textContent =
-    (on ? "Saving articles" : "Paused") +
-    (m.working
-      ? ` · Summarising “${m.working.slice(0, 40)}” · ${m.waiting} waiting`
-      : pending && m.installed
-        ? ` · ${pending} in queue`
-        : "");
+  $("stat").textContent = on ? "Saving what you read" : "Paused";
   $("setup").hidden = m.installed && m.state !== "downloading" && m.state !== "error";
-  let text = "One-time download · about 2.2 GB. Summaries stay on this computer.";
+  const waiting = items.filter(inQueue).length;
+  let text =
+    (waiting ? `${plural(waiting, "page")} waiting for a summary. ` : "") +
+    "One-time download · about 2.2 GB. Summaries stay on this computer.";
   let button = "Download";
   let pct = null;
   if (m.state === "downloading") {
@@ -650,6 +666,10 @@ async function renderModel() {
   } else if (m.state === "error") {
     text = `The model couldn't start: ${m.error}`;
     button = "Try again";
+  } else if (m.state === "loading") {
+    pct = m.total ? Math.round((m.loaded / m.total) * 100) : 0;
+    text = "Starting on this computer…";
+    button = null;
   } else if (m.installed) {
     text = "Ready. Summaries run offline on this computer.";
     button = null;
@@ -665,13 +685,145 @@ async function renderModel() {
     $(fill).style.width = (pct || 0) + "%";
   }
   if (changed) render();
+  renderActivity();
+}
+
+/* Activity: what the on-device model is doing right now, and what is waiting for it */
+
+const inQueue = (a) => a.status === "pending" || a.status === "processing";
+let finished = null; // the last page summarised while this tab was open, shown for a moment
+let finishedTimer;
+let idleSince = 0; // when the queue was last seen waiting with nothing running
+let nowId = null;
+let nextSig = null;
+
+// What is happening to a queued page and how far along it is
+// (pct null: working, no measure yet; pct undefined: not started, so no bar).
+function progressOf(a) {
+  const m = model;
+  const part = m.total ? m.loaded / m.total : null;
+  if (m.state === "loading") return { text: "Starting the model…", pct: part };
+  if (m.state === "downloading") return { text: "Downloading the model…", pct: part };
+  if (a && m.workingId === a.id)
+    return m.stage === "writing"
+      ? { text: "Writing the summary…", pct: m.progress ?? 0 }
+      : { text: "Reading…", pct: null };
+  return { text: "In line" };
+}
+
+// Progress shown inside an open article while it waits or is summarised; renderActivity updates it.
+function liveBar(a) {
+  const { pct } = progressOf(a);
+  if (pct === undefined) return null;
+  const bar = el("span", { className: "bar", id: "aBar" }, el("i"));
+  setBar(bar, pct);
+  return bar;
+}
+
+function setBar(bar, pct) {
+  bar.classList.toggle("indet", pct == null);
+  bar.firstElementChild.style.width = pct == null ? "" : `${Math.round(pct * 100)}%`;
+}
+
+function actRow(a, right) {
+  const b = el(
+    "button",
+    { className: "act-item" },
+    el(
+      "span",
+      { className: "act-line" },
+      siteIcon(a.url),
+      el("span", { className: "t", textContent: a.title }),
+      el("small", { textContent: right }),
+    ),
+  );
+  b.onclick = () => showArticle(a);
+  return b;
+}
+
+function showNow(a, stage, pct) {
+  if (nowId !== a.id) {
+    nowId = a.id;
+    $("actFav").replaceChildren(siteIcon(a.url));
+  }
+  $("actName").textContent = a.title;
+  $("actStage").textContent = stage;
+  $("actBar").hidden = pct === undefined;
+  if (pct !== undefined) setBar($("actBar"), pct);
+  $("actNow").onclick = () => showArticle(a);
+}
+
+function renderActivity() {
+  const queue = items.filter(inQueue).sort((a, b) => a.time - b.time);
+  const running = !!model.workingId || model.state === "loading";
+  idleSince = running || !queue.length ? 0 : idleSince || Date.now();
+  const sheetBar = openArticle && $("aBar");
+  if (sheetBar) {
+    const { pct } = progressOf(openArticle);
+    if (pct !== undefined) setBar(sheetBar, pct);
+  }
+  // Without the model (or when it failed) the banner above says how many pages are waiting.
+  const box = $("activity");
+  box.hidden = !model.installed || model.state === "error" || (!queue.length && !finished);
+  if (box.hidden) return;
+  if (!queue.length) {
+    const ok = finished.status === "completed";
+    $("actIcon").replaceChildren(icon(ok ? CHECK : CLOCK, 22));
+    $("actTitle").textContent = "All caught up.";
+    $("actText").textContent = ok
+      ? "The latest summary is ready."
+      : "The last page couldn’t be summarised.";
+    $("actStart").hidden = true;
+    showNow(finished, ok ? "Summary ready" : "No summary");
+    nextSig = "";
+    $("actNext").replaceChildren();
+    return;
+  }
+  const cur = queue.find((a) => a.id === model.workingId) || queue[0];
+  const stalled = idleSince && Date.now() - idleSince > 15000;
+  $("actIcon").replaceChildren(stalled ? icon(CLOCK, 22) : el("span", { className: "spin" }));
+  $("actTitle").textContent = stalled
+    ? `${plural(queue.length, "page")} waiting for a summary`
+    : `Summarising ${plural(queue.length, "page")}`;
+  $("actText").textContent = stalled
+    ? "The on-device model hasn’t started yet."
+    : "On this computer. You can keep browsing.";
+  $("actStart").hidden = !stalled;
+  const p = progressOf(cur);
+  showNow(cur, p.text, p.pct);
+  const next = queue.filter((a) => a !== cur);
+  const sig = next.map((a) => a.id).join();
+  if (sig === nextSig) return; // unchanged: don't rebuild rows (and reload their icons) every tick
+  nextSig = sig;
+  $("actNext").replaceChildren(
+    ...(next.length
+      ? [
+          el("h4", { textContent: "Up next" }),
+          ...next.slice(0, 4).map((a) => actRow(a, ago(a.time))),
+          next.length > 4 &&
+            el("p", { className: "act-more", textContent: `+ ${next.length - 4} more` }),
+        ].filter(Boolean)
+      : []),
+  );
+}
+
+function noteFinished(a) {
+  finished = a;
+  clearTimeout(finishedTimer);
+  finishedTimer = setTimeout(() => {
+    finished = null;
+    renderActivity();
+  }, 8000);
 }
 
 let loadFailed = false;
 async function load(force = false) {
   try {
+    const before = new Map(items.map((a) => [a.id, a]));
     items = await db.all();
     loadFailed = false;
+    for (const a of items)
+      if (before.has(a.id) && inQueue(before.get(a.id)) && !inQueue(a)) noteFinished(a);
   } catch (err) {
     if (!loadFailed) report("read your saved articles", err); // once, not every 4 s
     loadFailed = true;
@@ -754,6 +906,11 @@ $("pDelete").onclick = guard("delete the saved page", async () => {
 });
 
 $("openSettings").onclick = guard("open settings", showSettings);
+$("actStart").onclick = guard("start the summaries", async () => {
+  idleSince = Date.now(); // give the model a moment before offering the button again
+  renderActivity();
+  await chrome.runtime.sendMessage({ type: "processQueue" });
+});
 for (const id of ["setEnabled", "setText", "setInterval"])
   $(id).addEventListener("change", guard("save your settings", saveSettings));
 $("prefName").addEventListener("input", () =>
@@ -850,4 +1007,5 @@ try {
 }
 await load(true);
 if (lib === "saved") $("library").scrollIntoView();
-setInterval(load, 4000); // pick up new captures/summaries (no AI runs on opening a tab)
+db.onChange(() => load()); // a page was saved or a summary finished
+setInterval(load, 4000); // fallback poll for new pages/summaries (no AI runs on opening a tab)

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Tabs Watch",
-  "version": "2.1.0",
-  "description": "Saves the articles you open, summarises them with a local AI model, and shows your knowledge on every new tab. Nothing leaves your device.",
+  "version": "2.2.0",
+  "description": "Saves the pages you read, summarises them with a local AI model, and shows your knowledge on every new tab. Nothing leaves your device.",
   "permissions": ["tabs", "storage", "alarms", "scripting", "unlimitedStorage", "offscreen", "favicon"],
   "host_permissions": ["<all_urls>"],
   "action": { "default_popup": "popup.html", "default_icon": "icon.png" },

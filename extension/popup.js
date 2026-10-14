@@ -12,6 +12,12 @@ async function render() {
   if (model.state === "downloading") { mt.textContent = `Downloading model… ${Math.round(((model.loaded || 0) / (model.total || 1)) * 100)}% of ~2.2 GB`; mb.hidden = true; }
   else if (model.installed) { mt.textContent = "Local AI model ready · runs offline"; mb.hidden = true; }
   else { mt.textContent = model.state === "error" ? `Model failed: ${model.error}` : "Local AI model · one-time download, about 2.2 GB"; mb.hidden = false; mb.textContent = model.state === "error" ? "Try again" : "Download model"; }
+  // What the on-device model is doing right now (pages are summarised in the background).
+  const pct = model.stage === "writing" && model.progress != null ? ` · ${Math.round(model.progress * 100)}%` : "";
+  $("queueText").textContent = model.working
+    ? `Summarising “${model.working}”${pct}${model.waiting ? ` · ${model.waiting} waiting` : ""}`
+    : model.state === "loading" ? "Starting the model to summarise your pages…" : "";
+  $("queueText").hidden = !$("queueText").textContent;
   $("intervalMin").value = settings.intervalMin;
   $("now").innerHTML = current
     ? `<div class="t"><b>${esc(current.title)}</b></div><div class="muted t">${esc(current.url)}</div>
@@ -42,10 +48,16 @@ $("full").onclick = async () => {
   const b = $("full");
   b.disabled = true;
   b.textContent = "Saving…";
-  const r = await chrome.runtime.sendMessage({ type: "fullCapture" });
+  const r = await chrome.runtime.sendMessage({ type: "fullCapture" }).catch((e) => ({ ok: false, error: String(e?.message || e) }));
   b.disabled = false;
-  b.textContent = "Save page HTML";
-  if (!r?.ok) alert(r?.error || "Capture failed.");
+  if (!r?.ok) {
+    b.textContent = "Save page HTML";
+    alert(r?.error || "Capture failed.");
+  } else {
+    const { model = {} } = await chrome.storage.local.get("model").catch(() => ({}));
+    b.textContent = !r.queued ? "Saved ✓" : model.installed ? "Saved ✓ · summarising" : "Saved ✓ · summary after model download";
+    setTimeout(() => (b.textContent = "Save page HTML"), 2500);
+  }
   render();
 };
 $("clear").onclick = async () => { if (confirm("Delete all saved data?")) { await chrome.runtime.sendMessage({ type: "clear" }); render(); } };

@@ -1,4 +1,5 @@
 import * as db from "./db.js";
+import { pageKey } from "./url.js";
 // Tabs Watch background worker
 const MAX_ENTRIES = 500;
 const MAX_SHOTS = 50;
@@ -185,11 +186,17 @@ async function fullCapture(tab) {
   const captures = await get("captures", []);
   captures.unshift(capture);
   await set({ captures: captures.slice(0, MAX_CAPTURES) });
-  return { ok: true };
+  // The reader chose to keep this page, so it is also summarised like an article they read.
+  const article = await saveArticle(tab.id, tab.url, { force: true }).catch((e) => {
+    console.warn("Tabs Watch: couldn't queue the saved page for a summary", e);
+    return null;
+  });
+  return { ok: true, queued: !!article };
 }
 
-// ---- Knowledge capture: main article only, after 5s visible ----
+// ---- Knowledge capture: every page you stay on for 5 s (the article, or the page's text) ----
 const DWELL_MS = 5000;
+const RECAPTURE_MS = 30 * 60 * 1000; // a page you keep returning to is saved again at most every 30 min
 const BLOCKED =
   /(^|\.)(mail\.|outlook\.|bank|paypal\.|accounts?\.)|login|signin|sign-in|checkout|account|wp-admin/i;
 const pendingTimers = new Map();
@@ -216,12 +223,15 @@ function patchModel(patch) {
 }
 
 async function kick(type = "process") {
-  // Never start the 2.2 GB download unless the user asked for it.
-  if (type === "process" && !(await get("model", {})).installed) return;
-  await ensureOffscreen();
   try {
-    await chrome.runtime.sendMessage({ target: "offscreen", type });
-  } catch {}
+    const { installed = false } = await get("model", {});
+    // Never start the 2.2 GB download unless the user asked for it.
+    if (type === "process" && !installed) return;
+    await ensureOffscreen();
+    await chrome.runtime.sendMessage({ target: "offscreen", type, installed });
+  } catch (e) {
+    console.warn("Tabs Watch: couldn't reach the local model", e);
+  }
 }
 
 function scheduleArticle(tab) {
@@ -240,10 +250,21 @@ async function captureArticle(tabId, url) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   const act = await activeTab();
   if (!tab || !act || act.id !== tabId || tab.url !== url || tab.incognito) return; // navigated away
+  if (tab.status !== "complete") return; // still loading: the "complete" event schedules it again
   const u = new URL(url);
   if (BLOCKED.test(u.hostname + u.pathname)) return;
   const paused = (await get("pausedSites", [])).includes(u.hostname);
   if (paused) return;
+  await saveArticle(tabId, url);
+}
+
+// Reads the tab's DOM into the article library and queues it for the local model.
+// force: the reader saved this page themselves ("Save page"), so the re-save limit doesn't apply.
+// Returns the stored article, or null when the page was skipped or had no usable text.
+async function saveArticle(tabId, url, { force = false } = {}) {
+  const key = pageKey(url);
+  let versions = await db.byUrl(key);
+  if (!force && versions.some((v) => Date.now() - v.time < RECAPTURE_MS)) return null;
   let r;
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
@@ -252,18 +273,26 @@ async function captureArticle(tabId, url) {
       func: () => window.__tabsWatchExtract?.(),
     });
   } catch {
-    return;
+    return null;
   }
   const a = r?.result;
-  if (!a?.ok) return;
-  if ((await chrome.tabs.get(tabId).catch(() => null))?.url !== url) return;
-  const clean = u.origin + u.pathname;
+  if (!a?.ok) return null;
+  if ((await chrome.tabs.get(tabId).catch(() => null))?.url !== url) return null;
   const hash = await db.sha256(a.text);
-  const versions = await db.byUrl(clean);
-  if (versions.some((v) => v.hash === hash)) return; // unchanged article: no new copy
-  await db.put({
-    id: `${Date.now()}-${hash.slice(0, 8)}`,
-    url: clean,
+  versions = await db.byUrl(key);
+  const same = versions.find((v) => v.hash === hash);
+  if (same) {
+    // Unchanged page: no new copy. A saved page whose summary failed gets another try.
+    if (!force || same.status !== "failed") return same;
+    await db.put({ ...same, status: "pending", error: null });
+    kick();
+    return same;
+  }
+  // An older copy still waiting for its summary is replaced, not summarised as well.
+  const waiting = versions.find((v) => v.status === "pending");
+  const article = {
+    id: waiting?.id ?? `${Date.now()}-${hash.slice(0, 8)}`,
+    url: key,
     title: a.title,
     site: a.site,
     byline: a.byline,
@@ -274,16 +303,19 @@ async function captureArticle(tabId, url) {
     text: a.text,
     excerpt: a.excerpt,
     hash,
-    version: versions.length + 1,
+    version: waiting?.version ?? versions.length + 1,
     source: "dom",
     status: "pending",
-  });
-  const { model = {} } = await chrome.storage.local.get("model");
-  if (model.installed) kick();
+  };
+  await db.put(article);
+  kick(); // no-op until the model is installed
+  return article;
 }
 
 chrome.tabs.onUpdated.addListener((id, info, tab) => {
-  if (info.status === "complete" && tab.active) scheduleArticle(tab);
+  // info.url alone: an in-app navigation (YouTube, X, Gmail…) that never fires "complete" again.
+  if (tab.active && (info.status === "complete" || (info.url && tab.status === "complete")))
+    scheduleArticle(tab);
 });
 chrome.tabs.onActivated.addListener(async () => scheduleArticle(await activeTab()));
 
@@ -318,11 +350,32 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
   return true;
 });
 
+// Before 2.2 most summaries failed (answers were cut off mid-JSON), so an update gives every
+// failed page one more try with the fixed model settings.
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  if (reason !== "update") return;
+  try {
+    const failed = await db.byStatus("failed");
+    for (const a of failed) await db.put({ ...a, status: "pending", error: null });
+    if (failed.length) await kick();
+  } catch (e) {
+    console.warn("Tabs Watch: couldn't queue failed summaries again", e);
+  }
+});
+
 // Resume unfinished analyses after a browser restart.
 chrome.runtime.onStartup.addListener(async () => {
   const { model = {} } = await chrome.storage.local.get("model");
-  // A download cut off by closing the browser would otherwise show progress forever.
-  if (model.state === "downloading") await patchModel({ state: "idle", working: null, waiting: 0 });
+  // A download or analysis cut off by closing the browser would otherwise show progress forever.
+  if (model.state === "downloading" || model.state === "loading" || model.working)
+    await patchModel({
+      state: model.state === "error" ? "error" : "idle",
+      working: null,
+      workingId: null,
+      waiting: 0,
+      stage: null,
+      progress: null,
+    });
   if (
     model.installed &&
     (await db.byStatus("pending")).length + (await db.byStatus("processing")).length

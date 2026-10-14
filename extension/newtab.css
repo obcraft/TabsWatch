@@ -45,6 +45,27 @@ kbd{font:500 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--mute
 .model-banner p{margin:2px 0 0;font-size:14px;color:var(--mute)}
 .model-banner button{flex-shrink:0}
 .bar{display:block;height:4px;width:360px;max-width:100%;margin-top:10px;background:var(--soft);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .4s}
+.bar.indet i{width:30%!important;animation:indet 1.4s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes indet{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+.activity{margin:0 0 56px;padding:20px 24px 14px;background:var(--card);border-radius:20px;box-shadow:var(--shadow)}
+.act-head{display:flex;align-items:center;gap:18px;padding-bottom:6px}
+.act-head h3{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.act-head p{margin:2px 0 0;font-size:14px;color:var(--mute)}
+.act-head button{flex-shrink:0}
+.act-icon{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;flex-shrink:0;background:var(--accent-soft);color:var(--accent)}
+.spin{width:22px;height:22px;border-radius:50%;border:2.5px solid color-mix(in srgb,var(--accent) 22%,transparent);border-top-color:var(--accent);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.newtab button.act-item{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:100%;margin-top:8px;padding:12px 14px!important;border:0!important;border-radius:14px!important;background:transparent;text-align:left;font-weight:400!important}
+.newtab button.act-item:hover{background:var(--soft)!important}
+.newtab button.act-now{margin-top:12px;background:var(--bg)}
+.act-line{display:flex;align-items:center;gap:12px;min-width:0}
+.act-line .t{flex:1;min-width:0;font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act-line small{flex-shrink:0;font-size:13px;color:var(--mute)}
+.act-now .bar{width:auto;margin:0}
+.act-next h4{margin:14px 14px 0;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
+.act-next .act-item{margin-top:2px;padding:10px 14px!important}
+.act-next .act-line .t{font-size:14px;font-weight:400}
+.act-more{margin:6px 14px 4px;font-size:13px;color:var(--mute)}
 
 /* Sections */
 .block{margin:0 0 64px}
@@ -168,5 +189,5 @@ dialog.alert p{margin:6px 0 18px;font-size:13px;color:var(--mute)}
 .newtab footer{display:flex;justify-content:space-between;gap:16px;padding:28px 0 44px;border-top:1px solid var(--line);font-size:12px;color:var(--mute)}
 
 @media(max-width:1100px){.grid,.recaps{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px){.newtab header{padding:12px 16px}.newtab main{padding:0 16px}.intro{padding:44px 0 32px}.newtab .intro h2{font-size:42px}.intro p{font-size:17px}.grid,.recaps{grid-template-columns:1fr}.newtab .tile.featured,.newtab .tile.featured:hover{grid-column:auto;padding:22px 24px!important}.featured .tile-title{font-size:22px}.block-head h3{font-size:22px}.model-banner{flex-wrap:wrap}kbd{display:none}dialog.sheet,dialog.wide,dialog.narrow{width:100vw;max-height:94vh;margin:auto 0 0;border-radius:22px 22px 0 0}.sheet-body{padding:22px 20px 28px}.a-head h3{font-size:24px}.sheet-actions{flex-wrap:wrap}.row{flex-wrap:wrap}}
+@media(max-width:700px){.newtab header{padding:12px 16px}.newtab main{padding:0 16px}.intro{padding:44px 0 32px}.newtab .intro h2{font-size:42px}.intro p{font-size:17px}.grid,.recaps{grid-template-columns:1fr}.newtab .tile.featured,.newtab .tile.featured:hover{grid-column:auto;padding:22px 24px!important}.featured .tile-title{font-size:22px}.block-head h3{font-size:22px}.model-banner,.act-head{flex-wrap:wrap}.activity{padding:18px 16px 12px}kbd{display:none}dialog.sheet,dialog.wide,dialog.narrow{width:100vw;max-height:94vh;margin:auto 0 0;border-radius:22px 22px 0 0}.sheet-body{padding:22px 20px 28px}.a-head h3{font-size:24px}.sheet-actions{flex-wrap:wrap}.row{flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}

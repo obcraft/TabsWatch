@@ -26,11 +26,23 @@ async function tx(mode, fn) {
   });
 }
 
-export const put = (a) => tx("readwrite", (s) => s.put(a));
+// Tells open extension pages (the new tab) that articles changed, so new saves and status
+// changes show up at once instead of on the next poll. A channel never hears its own messages.
+const changes =
+  typeof BroadcastChannel === "function" ? new BroadcastChannel("tabswatch-articles") : null;
+async function write(fn) {
+  const out = await tx("readwrite", fn);
+  changes?.postMessage("changed");
+  return out;
+}
+export const onChange = (fn) => changes?.addEventListener("message", fn);
+
+export const put = (a) => write((s) => s.put(a));
 export const get = (id) => tx("readonly", (s) => s.get(id));
-export const del = (id) => tx("readwrite", (s) => s.delete(id));
-export const clearAll = () => tx("readwrite", (s) => s.clear());
-export const all = async () => (await tx("readonly", (s) => s.getAll())).sort((a, b) => b.time - a.time);
+export const del = (id) => write((s) => s.delete(id));
+export const clearAll = () => write((s) => s.clear());
+export const all = async () =>
+  (await tx("readonly", (s) => s.getAll())).sort((a, b) => b.time - a.time);
 export const byUrl = (url) => tx("readonly", (s) => s.index("url").getAll(url));
 export const byStatus = (st) => tx("readonly", (s) => s.index("status").getAll(st));
 

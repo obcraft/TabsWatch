@@ -118,6 +118,7 @@ function state(a) {
   if (a.status === "completed") return { cls: "ready", text: "Summary ready" };
   if (a.status === "processing") return { cls: "working", text: "Summarising…" };
   if (a.status === "failed") return { cls: "failed", text: "No summary" };
+  if (a.nextTryAt > Date.now()) return { cls: "waiting", text: "Trying again soon" };
   return { cls: "waiting", text: model.installed ? "In queue" : "Waiting for model" };
 }
 
@@ -409,7 +410,20 @@ function articleSummary(a) {
     el("h4", { textContent: "About this summary" }),
     el("p", {
       className: "fine",
-      textContent: `${an.coverage === "partial" ? "Based on the first part of the article" : "Based on the full article text"} · read from the page text · version ${a.version}${a.modelId ? " · " + a.modelId : ""}`,
+      textContent: [
+        an.coverage === "partial"
+          ? "Based on parts of the article"
+          : an.parts > 1
+            ? `Based on the full article, read in ${an.parts - 1} parts`
+            : "Based on the full article text",
+        a.stats?.reusedFrom
+          ? "reused from an identical page"
+          : a.stats?.ms && `summarised in ${(a.stats.ms / 1000).toFixed(1)} s on this computer`,
+        `version ${a.version}`,
+        a.modelId,
+      ]
+        .filter(Boolean)
+        .join(" · "),
     }),
   ].filter(Boolean);
 }
@@ -608,6 +622,7 @@ async function showSettings() {
   $("setEnabled").checked = settings.enabled !== false;
   $("setText").checked = !!settings.captureText;
   $("setInterval").value = settings.intervalMin ?? 1;
+  $("setIdle").value = String(settings.modelIdleMin ?? 5);
   $("prefName").value = prefs.name;
   $("prefRecap").checked = prefs.showRecap;
   $("ver").textContent = chrome.runtime.getManifest().version;
@@ -626,6 +641,7 @@ async function saveSettings() {
       enabled: $("setEnabled").checked,
       captureText: $("setText").checked,
       intervalMin,
+      modelIdleMin: Number($("setIdle").value) || 5,
     },
   });
   await chrome.runtime.sendMessage({ type: "settingsChanged" });
@@ -656,22 +672,29 @@ async function renderModel() {
   const waiting = items.filter(inQueue).length;
   let text =
     (waiting ? `${plural(waiting, "page")} waiting for a summary. ` : "") +
-    "One-time download · about 2.2 GB. Summaries stay on this computer.";
+    "One-time download · about 1.4 GB. Summaries stay on this computer.";
   let button = "Download";
   let pct = null;
+  const share = () => (m.total ? Math.round((m.loaded / m.total) * 100) : 0);
   if (m.state === "downloading") {
-    pct = m.total ? Math.round((m.loaded / m.total) * 100) : 0;
-    text = `Downloading… ${(m.loaded / 1e9 || 0).toFixed(2)} of ${(m.total / 1e9 || 0).toFixed(2)} GB (${pct}%). You can keep browsing.`;
+    pct = share();
+    text = `Downloading… ${(m.loaded / 1e9 || 0).toFixed(2)} of ${(m.total / 1e9 || 0).toFixed(2)} GB (${pct}%). You can keep browsing; if it stops, it picks up where it was.`;
     button = null;
   } else if (m.state === "error") {
-    text = `The model couldn't start: ${m.error}`;
-    button = "Try again";
+    text = m.installed
+      ? `The model couldn't start: ${m.error}`
+      : `The download stopped: ${m.error} What is already downloaded is kept.`;
+    button = m.installed ? "Try again" : "Continue download";
+  } else if (m.state === "verifying") {
+    pct = share();
+    text = "Checking the model files…";
+    button = null;
   } else if (m.state === "loading") {
-    pct = m.total ? Math.round((m.loaded / m.total) * 100) : 0;
+    pct = share();
     text = "Starting on this computer…";
     button = null;
   } else if (m.installed) {
-    text = "Ready. Summaries run offline on this computer.";
+    text = `Ready. Summaries run offline on this computer${m.bytes ? ` (${(m.bytes / 1e9).toFixed(1)} GB, ${m.dtype})` : ""}.`;
     button = null;
   }
   for (const [t, b, bar, fill] of [
@@ -701,13 +724,22 @@ let nextSig = null;
 // (pct null: working, no measure yet; pct undefined: not started, so no bar).
 function progressOf(a) {
   const m = model;
-  const part = m.total ? m.loaded / m.total : null;
-  if (m.state === "loading") return { text: "Starting the model…", pct: part };
-  if (m.state === "downloading") return { text: "Downloading the model…", pct: part };
-  if (a && m.workingId === a.id)
+  const files = m.total ? m.loaded / m.total : null;
+  if (m.state === "verifying") return { text: "Checking the model files…", pct: files };
+  if (m.state === "loading") return { text: "Starting the model…", pct: files };
+  if (m.state === "downloading") return { text: "Downloading the model…", pct: files };
+  if (a && m.workingId === a.id) {
+    // Long pages are read in parts, then the parts are combined into one summary.
+    const of = m.parts > 1 ? ` part ${Math.min(m.part || 1, m.parts - 1)} of ${m.parts - 1}` : "";
+    if (m.stage === "merging") return { text: "Combining the parts…", pct: m.progress ?? null };
     return m.stage === "writing"
-      ? { text: "Writing the summary…", pct: m.progress ?? 0 }
-      : { text: "Reading…", pct: null };
+      ? { text: of ? `Summarising${of}…` : "Writing the summary…", pct: m.progress ?? 0 }
+      : { text: of ? `Reading${of}…` : "Reading…", pct: null };
+  }
+  if (a?.nextTryAt > Date.now())
+    return {
+      text: `Trying again in ${Math.max(1, Math.round((a.nextTryAt - Date.now()) / 6e4))} min`,
+    };
   return { text: "In line" };
 }
 
@@ -755,7 +787,8 @@ function showNow(a, stage, pct) {
 
 function renderActivity() {
   const queue = items.filter(inQueue).sort((a, b) => a.time - b.time);
-  const running = !!model.workingId || model.state === "loading";
+  const running =
+    !!model.workingId || ["verifying", "loading", "downloading"].includes(model.state);
   idleSince = running || !queue.length ? 0 : idleSince || Date.now();
   const sheetBar = openArticle && $("aBar");
   if (sheetBar) {
@@ -799,7 +832,9 @@ function renderActivity() {
     ...(next.length
       ? [
           el("h4", { textContent: "Up next" }),
-          ...next.slice(0, 4).map((a) => actRow(a, ago(a.time))),
+          ...next
+            .slice(0, 4)
+            .map((a) => actRow(a, a.nextTryAt > Date.now() ? progressOf(a).text : ago(a.time))),
           next.length > 4 &&
             el("p", { className: "act-more", textContent: `+ ${next.length - 4} more` }),
         ].filter(Boolean)
@@ -865,7 +900,16 @@ $("aOpen").onclick = guard(
 );
 $("aRetry").onclick = guard("queue the article again", async () => {
   if (!openArticle) return;
-  const next = { ...openArticle, status: "pending", analysis: null, error: null };
+  // force: summarise again even if an identical page already has a summary.
+  const next = {
+    ...openArticle,
+    status: "pending",
+    analysis: null,
+    error: null,
+    force: true,
+    attempts: 0,
+    nextTryAt: null,
+  };
   await db.put(next);
   openArticle = next;
   drawArticle();
@@ -911,7 +955,7 @@ $("actStart").onclick = guard("start the summaries", async () => {
   renderActivity();
   await chrome.runtime.sendMessage({ type: "processQueue" });
 });
-for (const id of ["setEnabled", "setText", "setInterval"])
+for (const id of ["setEnabled", "setText", "setInterval", "setIdle"])
   $(id).addEventListener("change", guard("save your settings", saveSettings));
 $("prefName").addEventListener("input", () =>
   savePrefs({ name: $("prefName").value.slice(0, 40) }),

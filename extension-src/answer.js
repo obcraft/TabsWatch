@@ -1,29 +1,43 @@
 // Reading the local model's answers.
 
-// Pulls the JSON object out of a model answer. Long answers can stop mid-way at the token limit;
-// then everything up to the last complete value is kept and the open brackets are closed, so a
-// cut-off answer still gives its summary and finished points instead of failing outright.
+// Pulls the JSON object out of a model answer, with one controlled repair for the mistakes a
+// small model makes: a list it forgot to close ("...", }), a trailing comma before a bracket, and
+// an answer cut off at the token limit (everything up to the last complete value or list item is
+// kept and the open brackets are closed, so it still gives its summary and finished points).
 export function firstJsonObject(raw) {
   const start = raw.indexOf("{");
   if (start < 0) return null;
   const closers = [];
+  const noTrailingComma = (s) => s.replace(/,\s*$/, "");
+  let out = "";
   let inString = false;
   let escaped = false;
   let cut = null;
   for (let i = start; i < raw.length; i++) {
     const c = raw[i];
     if (inString) {
+      out += c;
       if (escaped) escaped = false;
       else if (c === "\\") escaped = true;
-      else if (c === '"') inString = false;
-    } else if (c === '"') inString = true;
-    else if (c === "{") closers.push("}");
-    else if (c === "[") closers.push("]");
-    else if (c === "}" || c === "]") {
-      closers.pop();
-      if (!closers.length) return raw.slice(start, i + 1); // complete answer
-      cut = raw.slice(start, i + 1) + [...closers].reverse().join("");
-    }
+      else if (c === '"') {
+        inString = false;
+        // A finished item in a list is worth keeping if the answer is cut off after it.
+        if (closers.at(-1) === "]") cut = out + [...closers].reverse().join("");
+      }
+    } else if (c === '"') {
+      inString = true;
+      out += c;
+    } else if (c === "{" || c === "[") {
+      closers.push(c === "{" ? "}" : "]");
+      out += c;
+    } else if (c === "}" || c === "]") {
+      if (!closers.includes(c)) continue; // a bracket that closes nothing
+      // Close whatever the model left open inside, then this one.
+      while (closers.at(-1) !== c) out = noTrailingComma(out) + closers.pop();
+      out = noTrailingComma(out) + closers.pop();
+      if (!closers.length) return out; // complete answer
+      cut = out + [...closers].reverse().join("");
+    } else out += c;
   }
   return cut;
 }

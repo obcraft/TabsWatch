@@ -9,13 +9,15 @@ async function render() {
     await chrome.storage.local.get(["log", "current", "settings", "model"]);
   for (const k of ["enabled", "captureText"]) $(k).checked = settings[k];
   const mt = $("modelText"), mb = $("install");
-  if (model.state === "downloading") { mt.textContent = `Downloading model… ${Math.round(((model.loaded || 0) / (model.total || 1)) * 100)}% of ~2.2 GB`; mb.hidden = true; }
+  if (model.state === "downloading") { mt.textContent = `Downloading model… ${Math.round(((model.loaded || 0) / (model.total || 1)) * 100)}% of ~1.4 GB`; mb.hidden = true; }
+  else if (model.state === "verifying") { mt.textContent = "Checking the model files…"; mb.hidden = true; }
   else if (model.installed) { mt.textContent = "Local AI model ready · runs offline"; mb.hidden = true; }
-  else { mt.textContent = model.state === "error" ? `Model failed: ${model.error}` : "Local AI model · one-time download, about 2.2 GB"; mb.hidden = false; mb.textContent = model.state === "error" ? "Try again" : "Download model"; }
+  else { mt.textContent = model.state === "error" ? `Model failed: ${model.error}` : "Local AI model · one-time download, about 1.4 GB"; mb.hidden = false; mb.textContent = model.state === "error" ? "Try again" : "Download model"; }
   // What the on-device model is doing right now (pages are summarised in the background).
   const pct = model.stage === "writing" && model.progress != null ? ` · ${Math.round(model.progress * 100)}%` : "";
+  const part = model.parts > 1 ? ` · part ${Math.min(model.part || 1, model.parts - 1)} of ${model.parts - 1}` : "";
   $("queueText").textContent = model.working
-    ? `Summarising “${model.working}”${pct}${model.waiting ? ` · ${model.waiting} waiting` : ""}`
+    ? `Summarising “${model.working}”${part}${pct}${model.waiting ? ` · ${model.waiting} waiting` : ""}`
     : model.state === "loading" ? "Starting the model to summarise your pages…" : "";
   $("queueText").hidden = !$("queueText").textContent;
   $("intervalMin").value = settings.intervalMin;

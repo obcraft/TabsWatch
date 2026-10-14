@@ -4,14 +4,21 @@ const STORE = "articles";
 
 function open() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open(DB, 1);
-    r.onupgradeneeded = () => {
-      const s = r.result.createObjectStore(STORE, { keyPath: "id" });
-      s.createIndex("url", "url");
-      s.createIndex("status", "status");
-      s.createIndex("time", "time");
+    const r = indexedDB.open(DB, 2);
+    r.onupgradeneeded = (e) => {
+      if (e.oldVersion < 1) {
+        const s = r.result.createObjectStore(STORE, { keyPath: "id" });
+        s.createIndex("url", "url");
+        s.createIndex("status", "status");
+        s.createIndex("time", "time");
+      }
+      // v2: find pages with the same text, so a finished analysis can be reused.
+      if (e.oldVersion < 2) r.transaction.objectStore(STORE).createIndex("hash", "hash");
     };
-    r.onsuccess = () => res(r.result);
+    r.onsuccess = () => {
+      r.result.onversionchange = () => r.result.close(); // never block a newer version
+      res(r.result);
+    };
     r.onerror = () => rej(r.error);
   });
 }
@@ -21,8 +28,14 @@ async function tx(mode, fn) {
   return new Promise((res, rej) => {
     const t = db.transaction(STORE, mode);
     const out = fn(t.objectStore(STORE));
-    t.oncomplete = () => res(out?.result ?? out);
-    t.onerror = () => rej(t.error);
+    t.oncomplete = () => {
+      db.close();
+      res(out?.result ?? out);
+    };
+    t.onerror = () => {
+      db.close();
+      rej(t.error);
+    };
   });
 }
 
@@ -45,6 +58,7 @@ export const all = async () =>
   (await tx("readonly", (s) => s.getAll())).sort((a, b) => b.time - a.time);
 export const byUrl = (url) => tx("readonly", (s) => s.index("url").getAll(url));
 export const byStatus = (st) => tx("readonly", (s) => s.index("status").getAll(st));
+export const byHash = (hash) => tx("readonly", (s) => s.index("hash").getAll(hash));
 
 export async function sha256(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));

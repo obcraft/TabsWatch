@@ -35,6 +35,23 @@ describe("firstJsonObject", () => {
     });
   });
 
+  it("keeps the finished items of a list that was cut off", () => {
+    const raw = '{"summary": "S", "keyPoints": ["one.", "two.", "thr';
+    expect(parse(raw)).toEqual({ summary: "S", keyPoints: ["one.", "two."] });
+  });
+
+  it("closes a list the model forgot to close", () => {
+    const raw = '{\n"summary": "S",\n"keyPoints": [\n"one.",\n"two."\n}';
+    expect(parse(raw)).toEqual({ summary: "S", keyPoints: ["one.", "two."] });
+  });
+
+  it("drops trailing commas and brackets that close nothing", () => {
+    expect(parse('{"summary": "S", "topics": ["a", "b",], }]')).toEqual({
+      summary: "S",
+      topics: ["a", "b"],
+    });
+  });
+
   it("returns null when there is nothing to keep", () => {
     expect(firstJsonObject("no json here")).toBeNull();
     expect(firstJsonObject('{"summary": "cut off before any')).toBeNull();

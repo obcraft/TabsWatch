@@ -108,6 +108,7 @@ async function setupAlarm() {
 chrome.runtime.onInstalled.addListener(setupAlarm);
 chrome.runtime.onStartup.addListener(setupAlarm);
 chrome.alarms.onAlarm.addListener(async (a) => {
+  if (a.name === "summaries") return kick(); // a page's pause after a failed try is over
   if (a.name !== "monitor") return;
   const tab = await activeTab();
   if (tab && tab.url && !tab.url.startsWith("chrome")) await snapshot(tab);
@@ -224,13 +225,29 @@ function patchModel(patch) {
 
 async function kick(type = "process") {
   try {
-    const { installed = false } = await get("model", {});
-    // Never start the 2.2 GB download unless the user asked for it.
-    if (type === "process" && !installed) return;
+    const model = await get("model", {});
+    // Never start the model download unless the user asked for it ("install" or earlier consent).
+    if (type === "process" && !model.installed) return;
+    const allowDownload = type === "install" || !!(model.consented || model.installed);
+    const { modelIdleMin = 5 } = await settings();
     await ensureOffscreen();
-    await chrome.runtime.sendMessage({ target: "offscreen", type, installed });
+    await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type,
+      allowDownload,
+      idleMin: modelIdleMin,
+    });
   } catch (e) {
     console.warn("Tabs Watch: couldn't reach the local model", e);
+  }
+}
+
+// The offscreen document freed the model after its idle time: close it so nothing keeps running.
+async function closeOffscreen() {
+  try {
+    if (await chrome.offscreen.hasDocument?.()) await chrome.offscreen.closeDocument();
+  } catch (e) {
+    console.warn("Tabs Watch: couldn't close the model document", e);
   }
 }
 
@@ -258,11 +275,24 @@ async function captureArticle(tabId, url) {
   await saveArticle(tabId, url);
 }
 
+const site = (host) => host.replace(/^www\./, "");
+function canonicalKey(canonical, url) {
+  if (!canonical) return null; // new URL(null, url) would be ".../null"
+  try {
+    const c = new URL(canonical, url);
+    if (!/^https?:$/.test(c.protocol) || site(c.hostname) !== site(new URL(url).hostname))
+      return null;
+    return pageKey(c.href);
+  } catch {
+    return null;
+  }
+}
+
 // Reads the tab's DOM into the article library and queues it for the local model.
 // force: the reader saved this page themselves ("Save page"), so the re-save limit doesn't apply.
 // Returns the stored article, or null when the page was skipped or had no usable text.
 async function saveArticle(tabId, url, { force = false } = {}) {
-  const key = pageKey(url);
+  let key = pageKey(url);
   let versions = await db.byUrl(key);
   if (!force && versions.some((v) => Date.now() - v.time < RECAPTURE_MS)) return null;
   let r;
@@ -278,6 +308,9 @@ async function saveArticle(tabId, url, { force = false } = {}) {
   const a = r?.result;
   if (!a?.ok) return null;
   if ((await chrome.tabs.get(tabId).catch(() => null))?.url !== url) return null;
+  // The page's own canonical address (same site only) joins copies reached through other links.
+  key = canonicalKey(a.canonical, url) ?? key;
+  if (!force && (await db.byUrl(key)).some((v) => Date.now() - v.time < RECAPTURE_MS)) return null;
   const hash = await db.sha256(a.text);
   versions = await db.byUrl(key);
   const same = versions.find((v) => v.hash === hash);
@@ -323,7 +356,12 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
   if (msg?.target === "offscreen") return false;
   (async () => {
     if (msg.type === "modelState") await patchModel(msg.patch);
-    if (msg.type === "installModel") await kick("install");
+    if (msg.type === "installModel") {
+      await patchModel({ consented: true, error: null }); // remembered, so a cut-off download resumes
+      await kick("install");
+    }
+    if (msg.type === "offscreenIdle") await closeOffscreen();
+    if (msg.type === "retryAt") await chrome.alarms.create("summaries", { when: msg.at });
     if (msg.type === "processQueue") await kick();
     if (msg.type === "snapshotNow") {
       const t = await activeTab();
@@ -356,7 +394,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason !== "update") return;
   try {
     const failed = await db.byStatus("failed");
-    for (const a of failed) await db.put({ ...a, status: "pending", error: null });
+    for (const a of failed)
+      await db.put({ ...a, status: "pending", error: null, attempts: 0, nextTryAt: null });
     if (failed.length) await kick();
   } catch (e) {
     console.warn("Tabs Watch: couldn't queue failed summaries again", e);
@@ -367,15 +406,19 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 chrome.runtime.onStartup.addListener(async () => {
   const { model = {} } = await chrome.storage.local.get("model");
   // A download or analysis cut off by closing the browser would otherwise show progress forever.
-  if (model.state === "downloading" || model.state === "loading" || model.working)
+  if (["downloading", "verifying", "loading"].includes(model.state) || model.working)
     await patchModel({
-      state: model.state === "error" ? "error" : "idle",
+      state: "idle",
       working: null,
       workingId: null,
       waiting: 0,
       stage: null,
       progress: null,
+      part: null,
+      parts: null,
     });
+  // A download the user started continues where it stopped (parts already on disk are kept).
+  if (model.consented && !model.installed) return kick("install");
   if (
     model.installed &&
     (await db.byStatus("pending")).length + (await db.byStatus("processing")).length

@@ -335,6 +335,7 @@ async function saveArticle(tabId, url, { force = false } = {}) {
     blocks: a.blocks,
     text: a.text,
     excerpt: a.excerpt,
+    og: a.og,
     hash,
     version: waiting?.version ?? versions.length + 1,
     source: "dom",

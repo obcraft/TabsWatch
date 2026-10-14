@@ -45,17 +45,21 @@ function ago(t) {
 }
 
 // Site icon from Chrome's local favicon cache (no network request); a letter tile if that fails.
-function siteIcon(url) {
+function siteIcon(url, large = false) {
   const name = host(url);
+  const cls = large ? " lg" : "";
   const img = el("img", {
-    className: "fav",
+    className: "fav" + cls,
     alt: "",
-    width: 20,
-    height: 20,
-    src: chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(url)}&size=32`),
+    width: large ? 28 : 20,
+    height: large ? 28 : 20,
+    src: chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(url)}&size=64`),
   });
   img.onerror = () => {
-    const mono = el("span", { className: "mono", textContent: (name[0] || "?").toUpperCase() });
+    const mono = el("span", {
+      className: "mono" + cls,
+      textContent: (name[0] || "?").toUpperCase(),
+    });
     mono.style.setProperty("--h", hue(name));
     img.replaceWith(mono);
   };
@@ -71,23 +75,37 @@ function seg(box, value, pick) {
 
 let items = [];
 let captures = [];
+let groups = [];
 let model = {};
 let prefs = { name: "", showRecap: true };
-let topic = "";
-let period = 0;
-let lib = location.hash === "#saved" ? "saved" : "articles";
+let lib = "sources";
+let source = null; // the website whose links are shown, or null for all sources
 let lastSig = "";
 let openArticle = null;
-let articleTab = "summary";
 let openPage = null;
 let pageMode = "page";
 let pageUrl = null;
 
+// The address bar keeps the view (#saved, #source=example.org), so Back returns to it.
+function readHash() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  lib = h === "saved" ? "saved" : "sources";
+  source = h.startsWith("source=") ? h.slice(7) : null;
+}
+function go(hash) {
+  history.pushState(null, "", hash ? `#${hash}` : location.pathname);
+  readHash();
+  render();
+  if ($("library").getBoundingClientRect().top < 0) $("library").scrollIntoView();
+}
+
+const words = (q) => q.toLowerCase().split(/\s+/).filter(Boolean);
 function matches(a, q) {
-  if (!q) return true;
   const hay = [
     a.title,
     a.site,
+    a.url,
+    a.og?.description,
     a.analysis?.summary,
     ...(a.analysis?.topics || []),
     ...(a.analysis?.entities || []),
@@ -95,24 +113,31 @@ function matches(a, q) {
   ]
     .join(" ")
     .toLowerCase();
-  return q
-    .toLowerCase()
-    .split(/\s+/)
-    .every((w) => hay.includes(w));
+  return words(q).every((w) => hay.includes(w));
 }
 
-function filtered() {
-  const q = $("q").value.trim();
-  const site = $("site").value;
-  const since = period ? Date.now() - period * 864e5 : 0;
-  return items.filter(
-    (a) =>
-      a.time >= since &&
-      (!site || host(a.url) === site) &&
-      (!topic || a.analysis?.topics?.includes(topic)) &&
-      matches(a, q),
-  );
+// Articles bundled by website, most recently read first. The name is the one the site gives
+// itself most often (og:site_name or Readability's), else its address.
+function sourcesOf(list) {
+  const by = new Map();
+  for (const a of list) {
+    const h = host(a.url);
+    if (!by.has(h)) by.set(h, { host: h, items: [], names: {} });
+    const s = by.get(h);
+    s.items.push(a);
+    const n = (a.og?.siteName || a.site || "").trim();
+    if (n && n.length <= 60 && n.replace(/^www\./, "") !== h) s.names[n] = (s.names[n] || 0) + 1;
+  }
+  return [...by.values()]
+    .map((s) => ({
+      host: s.host,
+      items: s.items,
+      name: Object.entries(s.names).sort((a, b) => b[1] - a[1])[0]?.[0] || s.host,
+      latest: Math.max(...s.items.map((a) => a.time)),
+    }))
+    .sort((a, b) => b.latest - a.latest);
 }
+const sourceName = (url) => groups.find((s) => s.host === host(url))?.name || host(url);
 
 function state(a) {
   if (a.status === "completed") return { cls: "ready", text: "Summary ready" };
@@ -122,39 +147,56 @@ function state(a) {
   return { cls: "waiting", text: model.installed ? "In queue" : "Waiting for model" };
 }
 
+// One plain paragraph about the page: the on-device summary, else the page's own description.
+const flat = (t) =>
+  String(t || "")
+    .replace(/\s*\n+\s*(?:[-•*·]\s+|\d+[.)]\s+)?/g, " ")
+    .trim();
+function clip(t, n = 320) {
+  if (t.length <= n) return t;
+  const cut = t.slice(0, n);
+  const end = cut.lastIndexOf(". ");
+  return end > n / 2 ? cut.slice(0, end + 1) : cut.replace(/\s+\S*$/, "") + "…";
+}
 function summaryText(a) {
-  if (a.status === "completed") return a.analysis.summary;
-  return (a.excerpt || a.blocks?.find((b) => b.length > 120) || "").slice(0, 260);
+  if (a.status === "completed" && a.analysis?.summary) return flat(a.analysis.summary);
+  return clip(flat(a.og?.description || a.excerpt || a.blocks?.find((b) => b.length > 120) || ""));
 }
 
 const empty = (paths, title, text) =>
   el(
     "div",
     { className: "empty" },
-    paths && icon(paths),
+    paths && icon(paths, 28),
     el("b", { textContent: title }),
     el("span", { textContent: text }),
   );
-const heading = (main, sub) =>
-  $("libTitle").replaceChildren(main + " ", el("span", { textContent: sub }));
+
+function heading(title, sub, { back = false, tabs = true, fav = null } = {}) {
+  $("libTitle").replaceChildren(...[fav, el("span", { textContent: title })].filter(Boolean));
+  $("libSub").textContent = sub || "";
+  $("back").hidden = !back;
+  $("libTabs").hidden = !tabs;
+}
 
 function renderHero() {
   const name = prefs.name.trim();
   $("greeting").textContent = `Welcome back${name ? ", " + name : ""}.`;
   const today = items.filter((a) => sameDay(a.time, Date.now())).length;
-  const week = items.filter((a) => a.time > Date.now() - 7 * 864e5).length;
   $("subtitle").textContent = !items.length
     ? "Read something worth keeping. It will show up right here."
-    : today
-      ? `You’ve read ${plural(today, "article")} today · ${items.length} saved in total.`
-      : week
-        ? `${plural(week, "article")} this week · ${items.length} saved in total.`
-        : `${plural(items.length, "article")} saved on this computer.`;
+    : [
+        plural(items.length, "link"),
+        `from ${plural(groups.length, "source")}`,
+        today && `· ${today} today`,
+      ]
+        .filter(Boolean)
+        .join(" ");
 }
 
 function renderRecaps() {
   const recaps = prefs.showRecap ? buildRecaps(items) : [];
-  $("recapWrap").hidden = !recaps.length;
+  $("recapWrap").hidden = !recaps.length || lib !== "sources" || !!source || !!$("q").value.trim();
   $("recaps").replaceChildren(
     ...recaps.map((r) => {
       const t = el(
@@ -182,97 +224,104 @@ function renderRecaps() {
   );
 }
 
-function renderTopics() {
-  const count = {};
-  for (const a of items) for (const t of a.analysis?.topics || []) count[t] = (count[t] || 0) + 1;
-  const top = Object.entries(count)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 24);
-  $("topics").hidden = !top.length;
-  $("topics").replaceChildren(
-    ...top.map(([t, n]) => {
-      const c = el("button", { className: "pill" }, t, el("small", { textContent: n }));
-      c.setAttribute("aria-pressed", String(t === topic));
-      c.onclick = () => {
-        topic = topic === t ? "" : t;
-        render();
-      };
-      return c;
-    }),
-  );
-}
-
-function articleTile(a, featured) {
-  const s = state(a);
-  const sum = summaryText(a);
-  const t = el(
+function sourceCard(s) {
+  const latest = s.items[0];
+  const b = el(
     "button",
-    { className: "tile" + (featured ? " featured" : "") },
+    { className: "source" },
     el(
-      "div",
-      { className: "src-line" },
-      siteIcon(a.url),
-      el("span", { textContent: a.site || host(a.url) }),
-      el("time", { textContent: ago(a.time) }),
-    ),
-    el("div", { className: "tile-title", textContent: a.title }),
-    sum && el("p", { className: "tile-sum", textContent: sum }),
-    el(
-      "div",
-      { className: "tile-foot" },
-      el("span", { className: `state ${s.cls}`, textContent: s.text }),
+      "span",
+      { className: "source-top" },
+      siteIcon(latest.url, true),
       el(
         "span",
-        { className: "labels" },
-        ...(a.analysis?.topics || [])
-          .slice(0, featured ? 4 : 2)
-          .map((x) => el("span", { textContent: x })),
+        { className: "grow" },
+        el("span", { className: "source-name", textContent: s.name }),
+        el("span", {
+          className: "source-meta",
+          textContent: `${plural(s.items.length, "link")} · ${ago(s.latest)}`,
+        }),
       ),
     ),
+    el("span", { className: "source-latest", textContent: latest.title }),
   );
-  t.style.setProperty("--h", hue(host(a.url)));
-  t.onclick = () => showArticle(a);
-  return t;
+  b.onclick = () => go(`source=${s.host}`);
+  return b;
 }
 
-function renderArticles() {
+function linkRow(a, withIcon) {
+  const s = state(a);
+  const b = el(
+    "button",
+    { className: "link" },
+    withIcon && siteIcon(a.url),
+    el(
+      "span",
+      { className: "link-main" },
+      el("span", { className: "link-title", textContent: a.title }),
+      el("span", { className: "link-sum", textContent: summaryText(a) || host(a.url) }),
+    ),
+    el(
+      "span",
+      { className: "link-side" },
+      s.cls !== "ready" && el("span", { className: `state ${s.cls}`, textContent: s.text }),
+      el("time", { textContent: ago(a.time) }),
+    ),
+  );
+  b.onclick = () => showArticle(a);
+  return b;
+}
+
+function renderLibrary() {
   const q = $("q").value.trim();
-  const list = filtered();
-  $("toolbar").hidden = !items.length;
-  if (q) heading("Results.", `${plural(list.length, "match", "matches")} for “${q}”.`);
-  else if (topic) heading(`${topic}.`, "Related articles.");
-  else heading("The latest.", "What you’ve been reading.");
-  if (!items.length)
-    return $("grid").replaceChildren(
-      empty(
-        BOOK,
-        "Nothing here yet.",
-        "Spend a few seconds on any page and it will appear here, summarised on this computer.",
-      ),
+  const body = $("libBody");
+  const s = source && groups.find((g) => g.host === source);
+  seg($("libTabs"), lib, (v) => go(v === "saved" ? "saved" : ""));
+  $("nSources").textContent = groups.length || "";
+  $("nSaved").textContent = captures.filter((c) => c.html).length || "";
+  if (lib === "saved") return renderSaved(q);
+  if (q) {
+    const list = items.filter((a) => matches(a, q));
+    heading("Results", `${plural(list.length, "match", "matches")} for “${q}”`, { back: !!s });
+    return body.replaceChildren(
+      list.length
+        ? el("div", { className: "links" }, ...list.map((a) => linkRow(a, true)))
+        : empty(null, "No matches.", "Try another word."),
     );
-  if (!list.length)
-    return $("grid").replaceChildren(empty(null, "No matches.", "Try another search or filter."));
-  const feature = !q && !topic && !period && !$("site").value && list.length > 2;
-  $("grid").replaceChildren(...list.map((a, i) => articleTile(a, feature && i === 0)));
+  }
+  if (s) {
+    heading(s.name, `${plural(s.items.length, "link")} · ${s.host}`, {
+      back: true,
+      tabs: false,
+      fav: siteIcon(s.items[0].url),
+    });
+    return body.replaceChildren(
+      el("div", { className: "links" }, ...s.items.map((a) => linkRow(a, false))),
+    );
+  }
+  heading("Sources", groups.length ? "Everything you read, grouped by website" : "");
+  body.replaceChildren(
+    groups.length
+      ? el("div", { className: "sources" }, ...groups.map(sourceCard))
+      : empty(
+          BOOK,
+          "No sources yet.",
+          "Spend a few seconds on any page and it shows up here, grouped by website.",
+        ),
+  );
 }
 
-function renderSaved() {
-  const q = $("q").value.trim();
+function renderSaved(q) {
   const pages = captures.filter((c) => c.html);
   const list = pages.filter(
-    (c) =>
-      !q ||
-      q
-        .toLowerCase()
-        .split(/\s+/)
-        .every((w) => `${c.title} ${c.url}`.toLowerCase().includes(w)),
+    (c) => !q || words(q).every((w) => `${c.title} ${c.url}`.toLowerCase().includes(w)),
   );
   heading(
-    "Saved pages.",
-    q ? `${plural(list.length, "match", "matches")} for “${q}”.` : "Full copies you chose to keep.",
+    "Saved pages",
+    q ? `${plural(list.length, "match", "matches")} for “${q}”` : "Full copies you chose to keep",
   );
   if (!pages.length)
-    return $("savedGrid").replaceChildren(
+    return $("libBody").replaceChildren(
       empty(
         PAGE,
         "No saved pages yet.",
@@ -280,72 +329,47 @@ function renderSaved() {
       ),
     );
   if (!list.length)
-    return $("savedGrid").replaceChildren(empty(null, "No matches.", "Try another search."));
-  $("savedGrid").replaceChildren(
-    ...list.map((c) => {
-      const a = articleFor(c);
-      const s = a && state(a);
-      const t = el(
-        "button",
-        { className: "tile" },
-        el(
-          "div",
-          { className: "src-line" },
+    return $("libBody").replaceChildren(empty(null, "No matches.", "Try another word."));
+  $("libBody").replaceChildren(
+    el(
+      "div",
+      { className: "links" },
+      ...list.map((c) => {
+        const b = el(
+          "button",
+          { className: "link" },
           siteIcon(c.url),
-          el("span", { textContent: host(c.url) }),
-          el("time", { textContent: ago(c.time) }),
-        ),
-        el("div", { className: "tile-title", textContent: c.title }),
-        a?.status === "completed" &&
-          el("p", { className: "tile-sum", textContent: a.analysis.summary }),
-        el(
-          "div",
-          { className: "tile-foot" },
-          el("span", { className: `state ${s?.cls || ""}`, textContent: s?.text || "Full page" }),
-          el("span", {
-            className: "fine",
-            textContent: kb(c.size || c.html.length) + (c.truncated ? " · cut off" : ""),
-          }),
-        ),
-      );
-      t.onclick = () => showPage(c);
-      return t;
-    }),
+          el(
+            "span",
+            { className: "link-main" },
+            el("span", { className: "link-title", textContent: c.title }),
+            el("span", {
+              className: "link-sum",
+              textContent: [host(c.url), kb(c.size || c.html.length), c.truncated && "cut off"]
+                .filter(Boolean)
+                .join(" · "),
+            }),
+          ),
+          el("span", { className: "link-side" }, el("time", { textContent: ago(c.time) })),
+        );
+        b.onclick = () => showPage(c);
+        return b;
+      }),
+    ),
   );
 }
 
 function render() {
+  groups = sourcesOf(items);
   renderHero();
-  const sites = [...new Set(items.map((a) => host(a.url)))].sort();
-  const cur = $("site").value;
-  $("site").replaceChildren(
-    el("option", { value: "", textContent: "All sites" }),
-    ...sites.map((s) => el("option", { value: s, textContent: s })),
-  );
-  $("site").value = sites.includes(cur) ? cur : "";
+  renderLibrary();
   renderRecaps();
-  renderTopics();
-  seg($("period"), period, (v) => {
-    period = Number(v);
-    render();
-  });
-  seg($("libTabs"), lib, (v) => {
-    lib = v;
-    render();
-  });
-  $("nArticles").textContent = items.length || "";
-  $("nSaved").textContent = captures.filter((c) => c.html).length || "";
-  $("articlesView").hidden = lib !== "articles";
-  $("savedView").hidden = lib !== "saved";
-  if (lib === "saved") renderSaved();
-  else renderArticles();
 }
 
-/* Article sheet */
+/* Link sheet: one short paragraph about the page, its preview image and details */
 
 function showArticle(a) {
   openArticle = a;
-  articleTab = "summary";
   drawArticle();
   $("aScroll").scrollTop = 0;
   if (!$("articleDlg").open) $("articleDlg").showModal();
@@ -354,109 +378,78 @@ function showArticle(a) {
 function drawArticle() {
   const a = openArticle;
   if (!a) return;
-  seg($("aTabs"), articleTab, (v) => {
-    articleTab = v;
-    drawArticle();
-    $("aScroll").scrollTop = 0;
-  });
-  $("aSite").replaceChildren(siteIcon(a.url), el("span", { textContent: a.site || host(a.url) }));
+  $("aSite").replaceChildren(siteIcon(a.url), el("span", { textContent: sourceName(a.url) }));
+  // The preview image comes from the website itself, so it only shows once it has loaded.
+  const img = $("aImg");
+  const src = a.og?.image || "";
+  if (img.dataset.src !== src) {
+    img.dataset.src = src;
+    img.hidden = true;
+    img.onload = () => (img.hidden = img.dataset.src !== src);
+    if (src) img.src = src;
+    else img.removeAttribute("src");
+  }
   $("aTitle").textContent = a.title;
-  const published =
-    a.published && !isNaN(new Date(a.published)) ? `Published ${day(a.published)}` : null;
-  $("aMeta").textContent = [a.byline, `Opened ${stamp(a.time)}`, published]
+  $("aMeta").textContent = [a.byline, `Read ${ago(a.time).toLowerCase()}`]
     .filter(Boolean)
     .join(" · ");
-  $("aRetry").hidden = a.status === "pending" || a.status === "processing";
-  $("aContent").replaceChildren(...(articleTab === "text" ? [articleText(a)] : articleSummary(a)));
+  const u = new URL(a.url);
+  $("aAddr").textContent = (u.hostname + u.pathname).replace(/^www\./, "").replace(/\/$/, "");
+  const saved = captureFor(a);
+  $("aSaved").hidden = !saved;
+  $("aSaved").onclick = () => {
+    $("articleDlg").close();
+    showPage(saved);
+  };
+  $("aContent").replaceChildren(...articleBody(a));
 }
 
-function articleSummary(a) {
-  const an = a.analysis;
-  if (a.status !== "completed" || !an) {
-    const why =
-      a.status === "failed"
-        ? `The on-device model couldn’t summarise this article${a.error ? ` (${a.error})` : ""}. Try “Analyse again”.`
-        : a.status === "processing"
-          ? "The on-device model is reading this article right now."
-          : model.installed
-            ? "This article is in line for a summary."
-            : "Download the on-device model in Settings to get summaries.";
-    const sum = summaryText(a);
-    const live = inQueue(a) && model.installed;
-    return [
-      el(
-        "div",
-        { className: "notice" },
-        el("b", { textContent: state(a).text }),
-        el("p", { textContent: why }),
-        live && liveBar(a),
-      ),
-      sum && el("p", { className: "lead", textContent: sum }),
-    ].filter(Boolean);
-  }
-  const points = an.points || [];
+function articleBody(a) {
+  const text = summaryText(a);
+  const og = a.og || {};
+  const desc = flat(og.description);
+  const published = a.published && !isNaN(new Date(a.published)) ? day(a.published) : null;
+  const facts = [
+    ["Site", og.siteName || sourceName(a.url)],
+    ["Type", og.type && og.type[0].toUpperCase() + og.type.slice(1)],
+    ["Preview title", og.title && og.title !== a.title && og.title],
+    ["Published", published],
+    ["Read", stamp(a.time)],
+  ].filter(([, v]) => v);
   return [
-    el("p", { className: "lead", textContent: an.summary }),
-    points.length && el("h4", { textContent: "Key points" }),
-    points.length &&
-      el(
-        "ol",
-        { className: "points" },
-        ...points.map((p) => el("li", {}, el("p", { textContent: p.point }), quote(p))),
+    text && el("p", { className: "lead", textContent: text }),
+    a.status !== "completed" && status(a),
+    desc && desc !== text && el("h4", { textContent: "From the page" }),
+    desc && desc !== text && el("p", { className: "og-desc", textContent: clip(desc, 400) }),
+    el("h4", { textContent: "Details" }),
+    el(
+      "dl",
+      { className: "facts" },
+      ...facts.map(([k, v]) =>
+        el("div", {}, el("dt", { textContent: k }), el("dd", { textContent: v })),
       ),
-    an.entities?.length && el("h4", { textContent: "Mentioned" }),
-    an.entities?.length &&
-      el("div", { className: "labels" }, ...an.entities.map((t) => el("span", { textContent: t }))),
-    el("h4", { textContent: "About this summary" }),
-    el("p", {
-      className: "fine",
-      textContent: [
-        an.coverage === "partial"
-          ? "Based on parts of the article"
-          : an.parts > 1
-            ? `Based on the full article, read in ${an.parts - 1} parts`
-            : "Based on the full article text",
-        a.stats?.reusedFrom
-          ? "reused from an identical page"
-          : a.stats?.ms && `summarised in ${(a.stats.ms / 1000).toFixed(1)} s on this computer`,
-        `version ${a.version}`,
-        a.modelId,
-      ]
-        .filter(Boolean)
-        .join(" · "),
-    }),
+    ),
   ].filter(Boolean);
 }
 
-function quote(p) {
-  if (!p.quote && !p.block)
-    return el("span", { className: "fine", textContent: "Source not verified" });
-  if (!p.block) return el("span", { className: "quote", textContent: `“${p.quote}”` });
-  const b = el("button", {
-    className: "quote",
-    // Without a quote the paragraph is the closest match, not a citation.
-    textContent: p.quote ? `“${p.quote}” — paragraph ${p.block}` : `See paragraph ${p.block}`,
-  });
-  b.onclick = () => {
-    articleTab = "text";
-    drawArticle();
-    const block = $(`b${p.block}`);
-    if (block) {
-      block.classList.add("hl");
-      block.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-  };
-  return b;
-}
-
-const articleText = (a) =>
-  el(
+// While a page waits for its summary the paragraph is the page's own description; say so.
+function status(a) {
+  const why =
+    a.status === "failed"
+      ? "The on-device model couldn’t summarise this page, so this is its own description."
+      : a.status === "processing"
+        ? "The on-device model is reading this page right now."
+        : model.installed
+          ? "This page is in line for a summary."
+          : "Download the on-device model in Settings to get summaries.";
+  return el(
     "div",
-    { className: "src" },
-    ...(a.blocks || []).map((t, i) =>
-      el("p", { id: `b${i + 1}` }, el("b", { textContent: i + 1 }), t),
-    ),
+    { className: "a-status" },
+    el("span", { className: `state ${state(a).cls}`, textContent: state(a).text }),
+    el("span", { textContent: why }),
+    inQueue(a) && model.installed && liveBar(a),
   );
+}
 
 /* Recap sheet */
 
@@ -514,8 +507,9 @@ function showRecap(r) {
 
 /* Saved page sheet */
 
-// The library copy of a saved page (same address), which carries its summary.
+// The library copy of a saved page (same address), which carries its summary, and back.
 const articleFor = (c) => items.find((a) => a.url === pageKey(c.url));
+const captureFor = (a) => captures.find((c) => c.html && pageKey(c.url) === a.url);
 
 function showPage(c) {
   openPage = c;
@@ -526,7 +520,7 @@ function showPage(c) {
     $("pageDlg").close();
     showArticle(a);
   };
-  $("pSite").replaceChildren(siteIcon(c.url), el("span", { textContent: host(c.url) }));
+  $("pSite").replaceChildren(siteIcon(c.url), el("span", { textContent: sourceName(c.url) }));
   $("pTitle").textContent = c.title;
   $("pMeta").textContent = [
     `Saved ${stamp(c.time)}`,
@@ -898,57 +892,10 @@ $("aOpen").onclick = guard(
   "open the original",
   () => openArticle && chrome.tabs.create({ url: openArticle.url }),
 );
-$("aRetry").onclick = guard("queue the article again", async () => {
-  if (!openArticle) return;
-  // force: summarise again even if an identical page already has a summary.
-  const next = {
-    ...openArticle,
-    status: "pending",
-    analysis: null,
-    error: null,
-    force: true,
-    attempts: 0,
-    nextTryAt: null,
-  };
-  await db.put(next);
-  openArticle = next;
-  drawArticle();
-  await chrome.runtime.sendMessage({ type: "processQueue" });
-  load(true);
-});
-$("aDelete").onclick = guard("delete the article", async () => {
-  const a = openArticle;
-  if (
-    !a ||
-    !(await confirmBox(
-      "Delete this article?",
-      "Its saved text and summary will be removed from this computer.",
-    ))
-  )
-    return;
-  await db.del(a.id);
-  $("articleDlg").close();
-  load(true);
-});
 $("pOpen").onclick = guard(
   "open the original",
   () => openPage && chrome.tabs.create({ url: openPage.url }),
 );
-$("pDelete").onclick = guard("delete the saved page", async () => {
-  const c = openPage;
-  if (
-    !c ||
-    !(await confirmBox(
-      "Delete this saved page?",
-      "The full copy will be removed from this computer.",
-    ))
-  )
-    return;
-  const { captures: all = [] } = await chrome.storage.local.get("captures");
-  await chrome.storage.local.set({ captures: all.filter((x) => x.id !== c.id) });
-  $("pageDlg").close();
-});
-
 $("openSettings").onclick = guard("open settings", showSettings);
 $("actStart").onclick = guard("start the summaries", async () => {
   idleSince = Date.now(); // give the model a moment before offering the button again
@@ -1004,7 +951,7 @@ $("q").onkeydown = (e) => {
     render();
   }
 };
-$("site").onchange = render;
+$("back").onclick = () => go("");
 document.addEventListener("keydown", (e) => {
   if (
     e.key === "/" &&
@@ -1015,11 +962,9 @@ document.addEventListener("keydown", (e) => {
     $("q").focus();
   }
 });
-addEventListener("hashchange", () => {
-  if (location.hash === "#saved") {
-    lib = "saved";
-    render();
-  }
+addEventListener("popstate", () => {
+  readHash();
+  render();
 });
 addEventListener("scroll", () => $("top").classList.toggle("scrolled", scrollY > 8), {
   passive: true,
@@ -1049,7 +994,8 @@ try {
 } catch (err) {
   report("load saved pages and homepage settings", err); // keep going with defaults
 }
+readHash();
 await load(true);
-if (lib === "saved") $("library").scrollIntoView();
+if (lib === "saved" || source) $("library").scrollIntoView();
 db.onChange(() => load()); // a page was saved or a summary finished
 setInterval(load, 4000); // fallback poll for new pages/summaries (no AI runs on opening a tab)

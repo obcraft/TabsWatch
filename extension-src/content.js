@@ -65,6 +65,17 @@ function extract() {
     if (text.length < MIN_CHARS) return { ok: false, reason: "too-short" };
     const meta = (n) =>
       document.querySelector(`meta[property="${n}"],meta[name="${n}"]`)?.content || null;
+    // Only a web address is kept for the preview image (no data: or javascript: URLs).
+    const image = (() => {
+      const src = meta("og:image") || meta("twitter:image");
+      if (!src) return null;
+      try {
+        const u = new URL(src, location.href);
+        return /^https?:$/.test(u.protocol) ? u.href : null;
+      } catch {
+        return null;
+      }
+    })();
     return {
       ok: true,
       title: (isArticle && art?.title) || document.title || location.hostname,
@@ -74,6 +85,13 @@ function extract() {
       lang: art?.lang || document.documentElement.lang || null,
       excerpt: (isArticle && art?.excerpt) || meta("description") || meta("og:description"),
       canonical: document.querySelector("link[rel=canonical]")?.href || null,
+      og: {
+        title: meta("og:title"),
+        description: meta("og:description"),
+        siteName: meta("og:site_name"),
+        type: meta("og:type"),
+        image,
+      },
       blocks,
       text,
     };

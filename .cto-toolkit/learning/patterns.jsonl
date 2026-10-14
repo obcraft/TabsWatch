@@ -34,3 +34,75 @@
   "security_relevant": true,
   "project_root": "/Users/olivier/Documents/TabsWatch"
 }
+{
+  "session_id": "1791930724-71465",
+  "timestamp": "2026-10-13T22:32:04Z",
+  "files_modified": 12,
+  "languages": "",
+  "tests_touched": false,
+  "security_relevant": true,
+  "project_root": "/Users/olivier/Documents/TabsWatch"
+}
+{
+  "session_id": "1791931158-79869",
+  "timestamp": "2026-10-13T22:39:18Z",
+  "files_modified": 6,
+  "languages": "",
+  "tests_touched": false,
+  "security_relevant": false,
+  "project_root": "/Users/olivier/Documents/TabsWatch"
+}
+{
+  "session_id": "1791934405-80862",
+  "timestamp": "2026-10-13T23:33:25Z",
+  "files_modified": 6,
+  "languages": "",
+  "tests_touched": false,
+  "security_relevant": false,
+  "project_root": "/Users/olivier/Documents/TabsWatch"
+}
+{
+  "session_id": "1791934473-82844",
+  "timestamp": "2026-10-13T23:34:33Z",
+  "files_modified": 6,
+  "languages": "",
+  "tests_touched": false,
+  "security_relevant": false,
+  "project_root": "/Users/olivier/Documents/TabsWatch"
+}
+{
+  "session_id": "1791967636-78078",
+  "timestamp": "2026-10-14T08:47:16Z",
+  "files_modified": 37,
+  "languages": "",
+  "tests_touched": true,
+  "security_relevant": true,
+  "project_root": "/Users/olivier/Documents/TabsWatch"
+}
+{
+  "session_id": "1791995345-28575",
+  "timestamp": "2026-10-14T16:29:05Z",
+  "files_modified": 38,
+  "languages": "",
+  "tests_touched": true,
+  "security_relevant": true,
+  "project_root": "/Users/olivier/Documents/TabsWatch"
+}
+{
+  "session_id": "1791998590-30721",
+  "timestamp": "2026-10-14T17:23:10Z",
+  "files_modified": 38,
+  "languages": "",
+  "tests_touched": true,
+  "security_relevant": true,
+  "project_root": "/Users/olivier/Documents/TabsWatch"
+}
+{
+  "session_id": "1791998614-31794",
+  "timestamp": "2026-10-14T17:23:34Z",
+  "files_modified": 38,
+  "languages": "",
+  "tests_touched": true,
+  "security_relevant": true,
+  "project_root": "/Users/olivier/Documents/TabsWatch"
+}

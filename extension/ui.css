@@ -1,7 +1,9 @@
-/* Shared Tabs Watch look: white, calm, Apple/Google-like. Loaded after each page's own styles. */
-:root{--bg:#fff;--fg:#1d1d1f;--mute:#6e6e73;--line:#e8e8ed;--soft:#f5f5f7;--accent:#1a8f52;--inverse:#fff}
+/* Shared Tabs Watch look: white, calm, Apple/Google-like. Loaded before each page's own styles.
+   One set of colours for every extension page, so the new tab's light/dark choice reaches the popup too. */
+:root{--bg:#fff;--card:#fff;--fg:#1d1d1f;--mute:#6e6e73;--faint:#8e8e93;--line:#e8e8ed;--line-strong:#d2d2d7;--soft:#f5f5f7;--hover:#fafafa;--seg-on:#fff;--switch-off:#e3e3e8;--switch:#34c759;--accent:#1a8f52;--accent-soft:#e9f6ee;--inverse:#fff;--ring:#9fd3b4;--danger:#d70015;color-scheme:light}
+:root[data-theme=dark]{--bg:#0c0c0d;--card:#141416;--fg:#f5f5f7;--mute:#a1a1a6;--faint:#7c7c80;--line:#38383c;--line-strong:#4c4c51;--soft:#1e1e21;--hover:#19191b;--seg-on:#2c2c2f;--switch-off:#39393d;--switch:#30d158;--accent:#6acf97;--accent-soft:#15291c;--inverse:#000;--ring:#3d7a55;--danger:#ff453a;color-scheme:dark}
 body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Google Sans Text","Segoe UI",Roboto,sans-serif;color:var(--fg);background:var(--bg);letter-spacing:0}
-header{border-bottom:1px solid var(--line)!important;background:rgba(255,255,255,.86)!important;backdrop-filter:saturate(180%) blur(16px)}
+header{border-bottom:1px solid var(--line)!important;background:color-mix(in srgb,var(--bg) 86%,transparent)!important;backdrop-filter:saturate(180%) blur(16px)}
 h1{font-weight:600!important;font-size:15px!important;letter-spacing:-.01em}
 h1 span{color:inherit!important}
 h1::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:8px;vertical-align:1px}
@@ -9,15 +11,15 @@ h1::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50
 button,a.dl{border:1px solid var(--line)!important;border-radius:980px!important;padding:6px 14px!important;font-weight:450!important;background:var(--bg);color:var(--fg);transition:background .15s}
 button:hover,a.dl:hover{background:var(--soft)!important}
 button.primary,button.p{background:var(--fg)!important;color:var(--inverse)!important;border-color:var(--fg)!important}
-button.primary:hover,button.p:hover{background:#3a3a3c!important}
+button.primary:hover,button.p:hover{background:var(--fg)!important;opacity:.85}
 button.on,.tabs button.on{background:var(--soft)!important;border-color:var(--line)!important;color:var(--fg)!important;font-weight:550!important}
 input,select{border:1px solid var(--line)!important;border-radius:10px!important;background:var(--bg)}
 #q{background:var(--soft)!important;border-color:transparent!important;border-radius:12px!important;padding:9px 14px!important}
-#q:focus{background:#fff!important;border-color:var(--line)!important;box-shadow:0 0 0 4px rgba(26,143,82,.10)}
+#q:focus{background:var(--bg)!important;border-color:var(--line)!important;box-shadow:0 0 0 4px rgba(26,143,82,.10)}
 .card,.cap,.rc,.setup{border:1px solid var(--line)!important;border-radius:14px!important;transition:box-shadow .2s,border-color .2s}
-.card:hover,.cap:hover{box-shadow:0 4px 18px rgba(0,0,0,.06);border-color:#dcdce1!important;background:#fff!important}
+.card:hover,.cap:hover{box-shadow:0 4px 18px rgba(0,0,0,.06);border-color:var(--line-strong)!important;background:var(--bg)!important}
 h2{color:var(--mute)!important;font-weight:550!important;letter-spacing:.04em!important}
-.chip{border-color:var(--line)!important;background:#fff}
+.chip{border-color:var(--line)!important;background:var(--bg)}
 .chip.on{background:var(--soft)!important;color:var(--fg)!important;font-weight:550}
 .tags span{background:var(--soft)!important;border-radius:6px!important}
 .stage,.strip{background:var(--soft)!important}

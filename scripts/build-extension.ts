@@ -8,6 +8,7 @@ const res = await Bun.build({
     "extension-src/background.js",
     "extension-src/offscreen.js",
     "extension-src/newtab.js",
+    "extension-src/popup.js",
     "extension-src/model-worker.js",
     "extension-src/benchmark.js",
   ],

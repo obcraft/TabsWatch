@@ -1,16 +1,10 @@
 import * as db from "./db.js";
 import { buildRecaps } from "./recap.js";
+import { host, hue, siteIcon } from "./site.js";
 import { initTheme, normalizeTheme } from "./theme.js";
 import { pageKey } from "./url.js";
 
 const $ = (id) => document.getElementById(id);
-const host = (u) => {
-  try {
-    return new URL(u).hostname.replace(/^www\./, "");
-  } catch {
-    return u;
-  }
-};
 const day = (t) => new Date(t).toLocaleDateString([], { day: "numeric", month: "short" });
 const stamp = (t) => new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 const el = (tag, props = {}, ...kids) => {
@@ -21,7 +15,6 @@ const el = (tag, props = {}, ...kids) => {
 const plural = (n, word, many = word + "s") => `${n} ${n === 1 ? word : many}`;
 const kb = (n) =>
   n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB";
-const hue = (s) => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 const icon = (paths, size = 34) => {
   const t = document.createElement("template");
@@ -42,28 +35,6 @@ function ago(t) {
   if (sameDay(t, Date.now())) return `${Math.round(min / 60)} h ago`;
   if (sameDay(t, Date.now() - 864e5)) return "Yesterday";
   return day(t);
-}
-
-// Site icon from Chrome's local favicon cache (no network request); a letter tile if that fails.
-function siteIcon(url, large = false) {
-  const name = host(url);
-  const cls = large ? " lg" : "";
-  const img = el("img", {
-    className: "fav" + cls,
-    alt: "",
-    width: large ? 28 : 20,
-    height: large ? 28 : 20,
-    src: chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(url)}&size=64`),
-  });
-  img.onerror = () => {
-    const mono = el("span", {
-      className: "mono" + cls,
-      textContent: (name[0] || "?").toUpperCase(),
-    });
-    mono.style.setProperty("--h", hue(name));
-    img.replaceWith(mono);
-  };
-  return img;
 }
 
 function seg(box, value, pick) {
@@ -997,5 +968,10 @@ try {
 readHash();
 await load(true);
 if (lib === "saved" || source) $("library").scrollIntoView();
+if (location.hash === "#settings") {
+  // Opened from the popup's settings button.
+  history.replaceState(null, "", location.pathname);
+  guard("open settings", showSettings)();
+}
 db.onChange(() => load()); // a page was saved or a summary finished
 setInterval(load, 4000); // fallback poll for new pages/summaries (no AI runs on opening a tab)

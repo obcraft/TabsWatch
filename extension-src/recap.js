@@ -1,4 +1,6 @@
 // Builds the per-topic recap shown on the new tab. Pure + local: reuses saved analyses, no model calls.
+import { domainOf, host } from "./site.js";
+
 const words = (s) => new Set(String(s).toLowerCase().match(/\p{L}{4,}/gu) || []);
 export function similar(a, b) {
   const x = words(a), y = words(b);
@@ -8,10 +10,16 @@ export function similar(a, b) {
   return n / (x.size + y.size - n);
 }
 const SAME = 0.35;
+const site = (a) => domainOf(host(a.url));
 
 export function buildRecaps(items, { now = Date.now(), windowDays = 14, max = 6 } = {}) {
   const since = now - windowDays * 864e5;
-  const done = items.filter((a) => a.status === "completed" && a.analysis);
+  // One copy per page (its newest finished one): older copies repeat the same points.
+  const latest = new Map();
+  for (const a of items)
+    if (a.status === "completed" && a.analysis && !(latest.get(a.url)?.time > a.time))
+      latest.set(a.url, a);
+  const done = [...latest.values()];
   const groups = {};
   for (const a of done) for (const t of a.analysis.topics || []) (groups[t] ||= []).push(a);
   const recaps = [];
@@ -24,7 +32,9 @@ export function buildRecaps(items, { now = Date.now(), windowDays = 14, max = 6 
     for (const p of pts) {
       const echoes = others(p).filter((q) => similar(p.point, q.point) >= SAME);
       if (echoes.length) {
-        if (!core.some((c) => similar(c.point, p.point) >= SAME)) core.push({ ...p, sources: 1 + new Set(echoes.map((e) => e.article.id)).size });
+        // Sources are websites: two pages of one site repeating a point are still one source.
+        if (!core.some((c) => similar(c.point, p.point) >= SAME))
+          core.push({ ...p, sources: new Set([p, ...echoes].map((e) => site(e.article))).size });
       } else adds.push(p);
     }
     if (!core.length && recent[0].analysis.summary) core.push({ point: recent[0].analysis.summary, article: recent[0], sources: 1 });

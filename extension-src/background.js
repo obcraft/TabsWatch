@@ -24,6 +24,7 @@ async function closeCurrent() {
   const log = await get("log", []);
   log.unshift(cur);
   await set({ log: log.slice(0, MAX_ENTRIES), current: null });
+  await recordVisit(cur);
 }
 
 async function grabText(tabId) {
@@ -64,6 +65,7 @@ async function track(tab) {
     url: tab.url,
     title: tab.title,
     favIconUrl: tab.favIconUrl,
+    incognito: tab.incognito,
     start: Date.now(),
   };
   await set({ current: entry });
@@ -201,6 +203,38 @@ const RECAPTURE_MS = 30 * 60 * 1000; // a page you keep returning to is saved ag
 const BLOCKED =
   /(^|\.)(mail\.|outlook\.|bank|paypal\.|accounts?\.)|login|signin|sign-in|checkout|account|wp-admin/i;
 const pendingTimers = new Map();
+
+// ---- Visits: how often and how long you stay on each page, for the sources ranking ----
+// A visit is a stretch of at least DWELL_MS on a page the library could keep; coming back to it
+// within half an hour continues the same visit.
+const SAME_VISIT_MS = 30 * 60 * 1000;
+function countable(e, paused) {
+  if (e.incognito || !/^https?:/i.test(e.url || "") || !(e.durationMs >= DWELL_MS)) return false;
+  const u = new URL(e.url);
+  return !BLOCKED.test(u.hostname + u.pathname) && !paused.includes(u.hostname);
+}
+const stretch = (e) => ({ url: pageKey(e.url), start: e.start, end: e.end });
+
+async function recordVisit(e) {
+  try {
+    if (countable(e, await get("pausedSites", [])))
+      await db.addVisits([stretch(e)], SAME_VISIT_MS);
+  } catch (err) {
+    console.warn("Tabs Watch: couldn't count the visit", err);
+  }
+}
+
+// Visits weren't counted before; the page history kept so far (the popup's log) gives a head start.
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    if ((await db.visits()).length) return;
+    const paused = await get("pausedSites", []);
+    const past = (await get("log", [])).filter((e) => countable(e, paused)).reverse();
+    if (past.length) await db.addVisits(past.map(stretch), SAME_VISIT_MS);
+  } catch (err) {
+    console.warn("Tabs Watch: couldn't count earlier visits", err);
+  }
+});
 
 async function ensureOffscreen() {
   if (await chrome.offscreen.hasDocument?.()) return;

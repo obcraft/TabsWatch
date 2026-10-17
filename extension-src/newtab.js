@@ -1,6 +1,7 @@
 import * as db from "./db.js";
 import { buildRecaps } from "./recap.js";
-import { host, hue, siteIcon } from "./site.js";
+import { domainOf, host, hue, siteIcon } from "./site.js";
+import { pagesOf, sourcesOf } from "./sources.js";
 import { initTheme, normalizeTheme } from "./theme.js";
 import { pageKey } from "./url.js";
 
@@ -16,6 +17,12 @@ const plural = (n, word, many = word + "s") => `${n} ${n === 1 ? word : many}`;
 const kb = (n) =>
   n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB";
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+function dur(ms) {
+  const min = Math.round(ms / 6e4);
+  if (min < 1) return "< 1 min";
+  if (min < 60) return `${min} min`;
+  return min % 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min / 60} h`;
+}
 const icon = (paths, size = 34) => {
   const t = document.createElement("template");
   t.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
@@ -44,7 +51,9 @@ function seg(box, value, pick) {
   }
 }
 
-let items = [];
+let items = []; // every saved copy, newest first
+let visits = new Map(); // page address → { count, ms, first, last }
+let pages = []; // each page once (see sources.js)
 let captures = [];
 let groups = [];
 let model = {};
@@ -87,28 +96,9 @@ function matches(a, q) {
   return words(q).every((w) => hay.includes(w));
 }
 
-// Articles bundled by website, most recently read first. The name is the one the site gives
-// itself most often (og:site_name or Readability's), else its address.
-function sourcesOf(list) {
-  const by = new Map();
-  for (const a of list) {
-    const h = host(a.url);
-    if (!by.has(h)) by.set(h, { host: h, items: [], names: {} });
-    const s = by.get(h);
-    s.items.push(a);
-    const n = (a.og?.siteName || a.site || "").trim();
-    if (n && n.length <= 60 && n.replace(/^www\./, "") !== h) s.names[n] = (s.names[n] || 0) + 1;
-  }
-  return [...by.values()]
-    .map((s) => ({
-      host: s.host,
-      items: s.items,
-      name: Object.entries(s.names).sort((a, b) => b[1] - a[1])[0]?.[0] || s.host,
-      latest: Math.max(...s.items.map((a) => a.time)),
-    }))
-    .sort((a, b) => b.latest - a.latest);
-}
-const sourceName = (url) => groups.find((s) => s.host === host(url))?.name || host(url);
+// The source of a page, or of an address from #source= (a site merged into another still finds it).
+const sourceOf = (domain) => groups.find((s) => s.domains.includes(domain));
+const sourceName = (url) => sourceOf(domainOf(host(url)))?.name || host(url);
 
 function state(a) {
   if (a.status === "completed") return { cls: "ready", text: "Summary ready" };
@@ -153,11 +143,11 @@ function heading(title, sub, { back = false, tabs = true, fav = null } = {}) {
 function renderHero() {
   const name = prefs.name.trim();
   $("greeting").textContent = `Welcome back${name ? ", " + name : ""}.`;
-  const today = items.filter((a) => sameDay(a.time, Date.now())).length;
-  $("subtitle").textContent = !items.length
+  const today = pages.filter((p) => sameDay(p.last, Date.now())).length;
+  $("subtitle").textContent = !pages.length
     ? "Read something worth keeping. It will show up right here."
     : [
-        plural(items.length, "link"),
+        plural(pages.length, "link"),
         `from ${plural(groups.length, "source")}`,
         today && `· ${today} today`,
       ]
@@ -167,7 +157,8 @@ function renderHero() {
 
 function renderRecaps() {
   const recaps = prefs.showRecap ? buildRecaps(items) : [];
-  $("recapWrap").hidden = !recaps.length || lib !== "sources" || !!source || !!$("q").value.trim();
+  // Above the library, so switching its tabs keeps the topics in place; a source or search hides them.
+  $("recapWrap").hidden = !recaps.length || !!source || !!$("q").value.trim();
   $("recaps").replaceChildren(
     ...recaps.map((r) => {
       const t = el(
@@ -195,32 +186,85 @@ function renderRecaps() {
   );
 }
 
-function sourceCard(s) {
-  const latest = s.items[0];
-  const b = el(
-    "button",
-    { className: "source" },
+// Sources as one table, most visited first. The whole row opens the source; the name is the
+// button, so the table works from the keyboard too.
+const COLS = [
+  ["#", "rank"],
+  ["Source", "c-source"],
+  ["Visits", "num c-visits"],
+  ["Pages", "num c-pages"],
+  ["Time", "num c-time"],
+  ["Topics", "c-topics"],
+  ["First seen", "c-first"],
+  ["Last visit", "c-last"],
+];
+function sourceTable(list) {
+  const top = Math.max(1, ...list.map((s) => s.visits));
+  return el(
+    "div",
+    { className: "table-wrap" },
     el(
-      "span",
-      { className: "source-top" },
-      siteIcon(latest.url, true),
+      "table",
+      { className: "sources-table" },
       el(
-        "span",
-        { className: "grow" },
-        el("span", { className: "source-name", textContent: s.name }),
-        el("span", {
-          className: "source-meta",
-          textContent: `${plural(s.items.length, "link")} · ${ago(s.latest)}`,
-        }),
+        "thead",
+        {},
+        el("tr", {}, ...COLS.map(([t, c]) => el("th", { scope: "col", className: c, textContent: t }))),
       ),
+      el("tbody", {}, ...list.map((s, i) => sourceRow(s, i + 1, top))),
     ),
-    el("span", { className: "source-latest", textContent: latest.title }),
   );
-  b.onclick = () => go(`source=${s.host}`);
-  return b;
 }
 
-function linkRow(a, withIcon) {
+function sourceRow(s, rank, top) {
+  const also = s.domains.length > 1 ? ` +${s.domains.length - 1}` : "";
+  const tr = el(
+    "tr",
+    {},
+    el("td", { className: "rank", textContent: rank }),
+    el(
+      "td",
+      { className: "c-source" },
+      el(
+        "button",
+        { className: "source-btn", title: s.domains.join(", ") },
+        siteIcon(s.pages[0].article.url),
+        el(
+          "span",
+          { className: "grow" },
+          el("span", { className: "source-name", textContent: s.name }),
+          el("span", { className: "source-meta", textContent: s.host + also }),
+        ),
+      ),
+    ),
+    el(
+      "td",
+      { className: "num c-visits" },
+      el(
+        "span",
+        { className: "visits" },
+        el("b", { textContent: s.visits }),
+        el("span", { className: "meter" }, el("i", { style: `width:${(s.visits / top) * 100}%` })),
+      ),
+    ),
+    el("td", { className: "num c-pages", textContent: s.pages.length }),
+    el("td", { className: "num c-time", textContent: s.ms ? dur(s.ms) : "–" }),
+    el(
+      "td",
+      { className: "c-topics" },
+      s.topics.length
+        ? el("span", { className: "labels" }, ...s.topics.map((t) => el("span", { textContent: t })))
+        : "–",
+    ),
+    el("td", { className: "c-first" }, el("time", { textContent: day(s.first) })),
+    el("td", { className: "c-last" }, el("time", { textContent: ago(s.last) })),
+  );
+  tr.onclick = () => go(`source=${s.host}`);
+  return tr;
+}
+
+function linkRow(p, withIcon) {
+  const a = p.article;
   const s = state(a);
   const b = el(
     "button",
@@ -236,7 +280,8 @@ function linkRow(a, withIcon) {
       "span",
       { className: "link-side" },
       s.cls !== "ready" && el("span", { className: `state ${s.cls}`, textContent: s.text }),
-      el("time", { textContent: ago(a.time) }),
+      el("span", { className: "visit-n", textContent: plural(p.visits, "visit") }),
+      el("time", { textContent: ago(p.last) }),
     ),
   );
   b.onclick = () => showArticle(a);
@@ -246,34 +291,34 @@ function linkRow(a, withIcon) {
 function renderLibrary() {
   const q = $("q").value.trim();
   const body = $("libBody");
-  const s = source && groups.find((g) => g.host === source);
+  const s = source && sourceOf(source);
   seg($("libTabs"), lib, (v) => go(v === "saved" ? "saved" : ""));
   $("nSources").textContent = groups.length || "";
   $("nSaved").textContent = captures.filter((c) => c.html).length || "";
   if (lib === "saved") return renderSaved(q);
   if (q) {
-    const list = items.filter((a) => matches(a, q));
+    const list = pages.filter((p) => matches(p.article, q));
     heading("Results", `${plural(list.length, "match", "matches")} for “${q}”`, { back: !!s });
     return body.replaceChildren(
       list.length
-        ? el("div", { className: "links" }, ...list.map((a) => linkRow(a, true)))
+        ? el("div", { className: "links" }, ...list.map((p) => linkRow(p, true)))
         : empty(null, "No matches.", "Try another word."),
     );
   }
   if (s) {
-    heading(s.name, `${plural(s.items.length, "link")} · ${s.host}`, {
-      back: true,
-      tabs: false,
-      fav: siteIcon(s.items[0].url),
-    });
+    heading(
+      s.name,
+      [plural(s.pages.length, "link"), plural(s.visits, "visit"), s.domains.join(", ")].join(" · "),
+      { back: true, tabs: false, fav: siteIcon(s.pages[0].article.url) },
+    );
     return body.replaceChildren(
-      el("div", { className: "links" }, ...s.items.map((a) => linkRow(a, false))),
+      el("div", { className: "links" }, ...s.pages.map((p) => linkRow(p, false))),
     );
   }
-  heading("Sources", groups.length ? "Everything you read, grouped by website" : "");
+  heading("Sources", groups.length ? "Every website you read, most visited first" : "");
   body.replaceChildren(
     groups.length
-      ? el("div", { className: "sources" }, ...groups.map(sourceCard))
+      ? sourceTable(groups)
       : empty(
           BOOK,
           "No sources yet.",
@@ -331,7 +376,8 @@ function renderSaved(q) {
 }
 
 function render() {
-  groups = sourcesOf(items);
+  pages = pagesOf(items, visits);
+  groups = sourcesOf(pages);
   renderHero();
   renderLibrary();
   renderRecaps();
@@ -820,7 +866,9 @@ let loadFailed = false;
 async function load(force = false) {
   try {
     const before = new Map(items.map((a) => [a.id, a]));
-    items = await db.all();
+    const [all, seen] = await Promise.all([db.all(), db.visits()]);
+    items = all;
+    visits = new Map(seen.map((v) => [v.url, v]));
     loadFailed = false;
     for (const a of items)
       if (before.has(a.id) && inQueue(before.get(a.id)) && !inQueue(a)) noteFinished(a);
@@ -829,7 +877,9 @@ async function load(force = false) {
     loadFailed = true;
     if (!force) return; // keep what is on screen; a forced load still renders the rest of the page
   }
-  const sig = items.map((a) => `${a.id}:${a.status}`).join("|");
+  const sig =
+    items.map((a) => `${a.id}:${a.status}`).join("|") +
+    `|${[...visits.values()].reduce((n, v) => n + v.last, 0)}`;
   if (force || sig !== lastSig) {
     lastSig = sig;
     render();
@@ -890,6 +940,7 @@ for (const id of ["install", "mInstall"])
 $("exportData").onclick = guard("export your data", async () => {
   const data = {
     articles: await db.all(),
+    visits: await db.visits(),
     ...(await chrome.storage.local.get(["log", "captures", "settings"])),
   };
   const a = el("a", {

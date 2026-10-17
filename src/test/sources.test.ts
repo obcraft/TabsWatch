@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 // @ts-expect-error plain JS module
-import { pagesOf, sourcesOf } from "../../extension-src/sources.js";
+import { filterSources, pagesOf, sinceOf, sourcesOf, topicsOf } from "../../extension-src/sources.js";
 // @ts-expect-error plain JS module
 import { domainOf } from "../../extension-src/site.js";
 

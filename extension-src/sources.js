@@ -79,3 +79,34 @@ export function sourcesOf(pages) {
     })
     .sort((a, b) => b.visits - a.visits || b.last - a.last);
 }
+
+// The filters above the sources table: when you last visited, a topic, and the order.
+export const SORTS = {
+  visits: (a, b) => b.visits - a.visits || b.last - a.last,
+  recent: (a, b) => b.last - a.last,
+  time: (a, b) => b.ms - a.ms || b.visits - a.visits,
+  pages: (a, b) => b.pages.length - a.pages.length || b.visits - a.visits,
+  name: (a, b) => a.name.localeCompare(b.name),
+};
+export function sinceOf(period, now = Date.now()) {
+  if (period === "today") return new Date(now).setHours(0, 0, 0, 0);
+  const days = Number(period);
+  return days > 0 ? now - days * 864e5 : 0; // "all" or anything unknown: no limit
+}
+const hasTopic = (s, t) => s.pages.some((p) => p.done?.analysis.topics?.includes(t));
+export function filterSources(sources, { period = "all", topic = "", sort = "visits", now } = {}) {
+  const since = sinceOf(period, now);
+  return sources
+    .filter((s) => s.last >= since && (!topic || hasTopic(s, topic)))
+    .sort(SORTS[sort] || SORTS.visits);
+}
+// Every topic of finished pages, by how many sources it appears in.
+export function topicsOf(sources) {
+  const n = {};
+  for (const s of sources)
+    for (const t of new Set(s.pages.flatMap((p) => p.done?.analysis.topics || [])))
+      n[t] = (n[t] || 0) + 1;
+  return Object.entries(n)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([t]) => t);
+}
